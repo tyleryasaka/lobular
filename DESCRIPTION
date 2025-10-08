@@ -1,11 +1,16 @@
 Package: lobular
 Type: Package
-Title: What the Package Does (Title Case)
+Title: Lobular
 Version: 0.1.0
-Author: Who wrote it
-Maintainer: The package maintainer <yourself@somewhere.net>
-Description: More about what it does (maybe more than one line)
-    Use four spaces when indenting paragraphs within the Description.
-License: What license is it under?
+Author: Tyler Yasaka
+Maintainer: Tyler Yasaka <tyy4@pitt.edu>
+Description: Inference of hepatocyte zonation in a single cell (+/- spatial) dataset
+License: Academic Free License v. 3.0
 Encoding: UTF-8
 LazyData: true
+Imports:
+    org.Hs.eg.db,
+    org.Mm.eg.db,
+    AnnotationDbi,
+    Matrix,
+    moments
