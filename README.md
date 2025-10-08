@@ -29,10 +29,17 @@ library(lobular)
 ### Obtaining zonation in Seurat v5
 
 ```r
+# Normalize to a baseline sample
 seurat_baseline <- subset(seurat_obj, subset = sample == 'my_baseline_sample_id')
 zonation_obj <- setBaseline(Seurat::GetAssayData(seurat_baseline, slot = 'data'))
+
+# Obtain discrete zonation bins for entire dataset, normalized to the baseline
 zonation_assignments <- getZone(Seurat::GetAssayData(seurat_obj, slot = 'data'), zonation_obj)
 seurat_obj <- AddMetaData(seurat_obj, zonation_assignments, col.name = 'zone')
+
+# Obtain a continuous zonation gradient for entire dataset, normalized to the baseline (0 = portal triad, 1 = central vein)
+zonation_gradient <- getZonationGradient(Seurat::GetAssayData(seurat_obj, slot = 'data'), zonation_obj)
+seurat_obj <- AddMetaData(seurat_obj, zonation_gradient, col.name = 'zonation')
 ```
 
 ## Functions
@@ -65,7 +72,7 @@ A vector of zonation assignments (discrete)
 
 ### `getZonationGradient(mtx, zone_obj)`
 
-Apply the model to new values, returning the zonation as a gradient between 0 and 1
+Apply the model to new values, returning the zonation as a gradient between 0 and 1 (0 = portal triad, 1 = central vein)
 
 #### Parameters
 
