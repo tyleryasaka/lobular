@@ -150,15 +150,25 @@ setBaseline = function(mtx, species = 'human') {
   zone_obj
 }
 
-#' Apply the model to new values, returning the zonation
+#' Apply the model to new values, returning the zonation as discrete bins (1, 2, or 3)
 #' @param mtx Gene expression matrix with genes as rows
 #' @param zone_obj Calibrated Zonation Object
-#' @return A vector of zonation assignments
+#' @return A vector of zonation assignments (discrete)
 #' @export
 getZone = function(mtx, zone_obj) {
   new_vec = getGeneAvg(mtx, zone_obj$factors)
   zonescore = apply_transformation(new_vec, zone_obj$baseline)
-  zone = ifelse(zonescore < (1 / 3), 1, ifelse(zonescore < (2 / 3), 2, 3))
-  zone = factor(zone, levels = c('1', '2', '3'))
+  zone = ifelse(zonescore < (1 / 3), 'Zone_1', ifelse(zonescore < (2 / 3), 'Zone_2', 'Zone_3'))
+  zone = factor(zone, levels = c('Zone_1', 'Zone_2', 'Zone_3'))
   zone
+}
+
+#' Apply the model to new values, returning the zonation as a gradient between 0 and 1
+#' @param mtx Gene expression matrix with genes as rows
+#' @param zone_obj Calibrated Zonation Object
+#' @return A vector of numeric zonation assignments (continuous)
+#' @export
+getZonationGradient = function(mtx, zone_obj) {
+  new_vec = getGeneAvg(mtx, zone_obj$factors)
+  apply_transformation(new_vec, zone_obj$baseline)
 }

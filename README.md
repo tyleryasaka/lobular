@@ -52,7 +52,7 @@ A `ZonationObject` with calibrated baseline zonation.
 
 ### `getZone(mtx, zone_obj)`
 
-Apply the model to new values, returning the zonation.
+Apply the model to new values, returning the zonation as discrete bins (1, 2, or 3)
 
 #### Parameters
 
@@ -61,4 +61,17 @@ Apply the model to new values, returning the zonation.
 
 #### Return Value
 
-A vector of zonation assignments. (1, 2, and 3)
+A vector of zonation assignments (discrete)
+
+### `getZonationGradient(mtx, zone_obj)`
+
+Apply the model to new values, returning the zonation as a gradient between 0 and 1
+
+#### Parameters
+
+- `mtx`: Gene expression matrix with genes as rows
+- `zone_obj`: Calibrated Zonation Object
+
+#### Return Value
+
+A vector of numeric zonation assignments (continuous)
