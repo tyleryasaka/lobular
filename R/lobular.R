@@ -160,6 +160,7 @@ getZone = function(mtx, zone_obj) {
   zonescore = apply_transformation(new_vec, zone_obj$baseline)
   zone = ifelse(zonescore < (1 / 3), 'Zone_1', ifelse(zonescore < (2 / 3), 'Zone_2', 'Zone_3'))
   zone = factor(zone, levels = c('Zone_1', 'Zone_2', 'Zone_3'))
+  names(zone) = colnames(mtx)
   zone
 }
 
@@ -170,5 +171,7 @@ getZone = function(mtx, zone_obj) {
 #' @export
 getZonationGradient = function(mtx, zone_obj) {
   new_vec = getGeneAvg(mtx, zone_obj$factors)
-  apply_transformation(new_vec, zone_obj$baseline)
+  zone_continuous = apply_transformation(new_vec, zone_obj$baseline)
+  names(zone_continuous) = colnames(mtx)
+  zone_continuous
 }
