@@ -348,7 +348,7 @@ plotZoneSpatialContours = function(mtx, coords, zone_obj, resolution = 1, use_fo
     interp_df$x = interp_df$x / scale_factor
     interp_df$y = interp_df$y / scale_factor
   }
-  breaks = seq(0, 1, length.out = 4)
+  breaks = seq(1, 3, length.out = 4)
   ggplot(coords) +
     geom_point(data = coords, aes(x = x, y = y, color = zone), size=1) +
     scale_color_viridis_c(name = 'Zonation') +
