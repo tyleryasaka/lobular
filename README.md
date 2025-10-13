@@ -44,41 +44,134 @@ seurat_obj <- AddMetaData(seurat_obj, zonation_gradient, col.name = 'zonation')
 
 ## Functions
 
-### `setBaseline(mtx, species = 'human')`
+### `setBaseline()`
 
 Calibrate the model to baseline liver zonation.
 
-#### Parameters
+**Usage:**
+```r
+setBaseline(mtx, species = 'human')
+```
 
-- `mtx`: Gene expression matrix with genes as rows
-- `species`: Species to use, defaults to human. Currently supports 'mouse' and 'human'.
+**Arguments:**
+- `mtx`: Gene expression matrix with genes as rows.
+- `species`: Species to use; defaults to `'human'`. Supports `'mouse'` and `'human'`.
 
-#### Return Value
+**Returns:**
+- A `ZonationObject` with calibrated baseline zonation.
 
-A `ZonationObject` with calibrated baseline zonation.
+---
 
-### `getZone(mtx, zone_obj)`
+### `getZone()`
 
-Apply the model to new values, returning the zonation as discrete bins (1, 2, or 3)
+Apply the model to new samples, returning discrete zonation bins.
 
-#### Parameters
+**Usage:**
+```r
+getZone(mtx, zone_obj)
+```
 
-- `mtx`: Gene expression matrix with genes as rows
-- `zone_obj`: Calibrated Zonation Object
+**Arguments:**
+- `mtx`: Gene expression matrix with genes as rows.
+- `zone_obj`: Calibrated `ZonationObject`.
 
-#### Return Value
+**Returns:**
+- Vector of zonation assignments (`Zone_1`, `Zone_2`, `Zone_3`) as a factor.
 
-A vector of zonation assignments (discrete)
+---
 
-### `getZonationGradient(mtx, zone_obj)`
+### `getZonationGradient()`
 
-Apply the model to new values, returning the zonation as a gradient between 0 and 1 (0 = portal triad, 1 = central vein)
+Apply the model to new samples, returning continuous zonation (0–1).
 
-#### Parameters
+**Usage:**
+```r
+getZonationGradient(mtx, zone_obj)
+```
 
-- `mtx`: Gene expression matrix with genes as rows
-- `zone_obj`: Calibrated Zonation Object
+**Arguments:**
+- `mtx`: Gene expression matrix with genes as rows.
+- `zone_obj`: Calibrated `ZonationObject`.
 
-#### Return Value
+**Returns:**
+- Vector of numeric zonation values (continuous) per sample.
 
-A vector of numeric zonation assignments (continuous)
+---
+
+### `getZoneSpatial()`
+
+Infer zonation for all cells based on spatial interpolation.
+
+**Usage:**
+```r
+getZoneSpatial(mtx, coords, zone_obj, use_for_inference = NULL)
+```
+
+**Arguments:**
+- `mtx`: Gene expression matrix with genes as rows.
+- `coords`: Coordinate matrix with columns `x` and `y`; rownames match `mtx` colnames.
+- `zone_obj`: Calibrated `ZonationObject`.
+- `use_for_inference`: Optional vector of sample names to use for zonation inference (e.g., hepatocytes).
+
+**Returns:**
+- Vector of discrete zonation assignments for all samples.
+
+---
+
+### `plotZoneSpatial()`
+
+Plot interpolated zonation zones in 2D.
+
+**Usage:**
+```r
+plotZoneSpatial(mtx, coords, zone_obj, use_for_inference = NULL)
+```
+
+**Arguments:**
+- `mtx`: Gene expression matrix with genes as rows.
+- `coords`: Coordinate matrix with columns `x` and `y`.
+- `zone_obj`: Calibrated `ZonationObject`.
+- `use_for_inference`: Optional subset of samples for inference.
+
+**Returns:**
+- A `ggplot` object with filled contour zones.
+
+---
+
+### `plotZoneSpatialContours()`
+
+Plot 2D zonation with contour outlines and points.
+
+**Usage:**
+```r
+plotZoneSpatialContours(mtx, coords, zone_obj, use_for_inference = NULL)
+```
+
+**Arguments:**
+- `mtx`: Gene expression matrix with genes as rows.
+- `coords`: Coordinate matrix with columns `x` and `y`.
+- `zone_obj`: Calibrated `ZonationObject`.
+- `use_for_inference`: Optional subset of samples for inference.
+
+**Returns:**
+- A `ggplot` object with points colored by zonation and contour outlines.
+
+---
+
+### `plotZoneSpatialCustom()`
+
+Plot a custom variable with zonation contour outlines.
+
+**Usage:**
+```r
+plotZoneSpatialCustom(mtx, meta, zone_obj, use_for_inference = NULL)
+```
+
+**Arguments:**
+- `mtx`: Gene expression matrix with genes as rows.
+- `meta`: Metadata matrix with columns `x`, `y`, and `label`.
+- `zone_obj`: Calibrated `ZonationObject`.
+- `use_for_inference`: Optional subset of samples for inference.
+
+**Returns:**
+- A `ggplot` object with points colored by `label` and contour outlines.

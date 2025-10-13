@@ -1,3 +1,5 @@
+ZONES = c('Zone_1', 'Zone_2', 'Zone_3')
+
 #' Create a Zonation Object
 #'
 #' @param baseline Numeric vector of baseline zonation scores
@@ -115,7 +117,22 @@ apply_transformation = function(new_values, original_values) {
   approx(unique_orig, ranks, xout = new_values, rule = 2)$y
 }
 
+#' Obtain an interpolation data frame
+#'
+#' @param mtx Gene expression matrix with genes as rows
+#' @param coords Coordinate matrix with samples as rows, and columns `x` and `y`. Rownames of coords should match colnames of mtx.
+#' @param zone_obj Calibrated Zonation Object
+#' @return An interpolation data frame
+#' @noRd
+apply_interpolation = function(mtx, coords, zone_obj) {
+  coords$zonation = getZonationGradient(mtx, zone_obj)
+  nx = abs((range(coords$x)[[1]] - range(coords$x)[[2]]) / 300)
+  ny = abs((range(coords$y)[[1]] - range(coords$y)[[2]]) / 300)
+  with(coords, interp(x, y, zonation, duplicate = "mean", linear = TRUE, extrap = FALSE, nx = nx, ny = ny))
+}
+
 #' Calibrate the model to baseline liver zonation
+#'
 #' @param mtx Gene expression matrix with genes as rows
 #' @param species Species to use, defaults to human. Currently supports 'mouse' and 'human'.
 #' @return A \code{ZonationObject} with calibrated baseline zonation
@@ -150,7 +167,8 @@ setBaseline = function(mtx, species = 'human') {
   zone_obj
 }
 
-#' Apply the model to new values, returning the zonation as discrete bins (1, 2, or 3)
+#' Apply the model to new samples, returning the zonation per cell/spot as discrete bins (1, 2, or 3)
+#'
 #' @param mtx Gene expression matrix with genes as rows
 #' @param zone_obj Calibrated Zonation Object
 #' @return A vector of zonation assignments (discrete)
@@ -159,12 +177,13 @@ getZone = function(mtx, zone_obj) {
   new_vec = getGeneAvg(mtx, zone_obj$factors)
   zonescore = apply_transformation(new_vec, zone_obj$baseline)
   zone = ifelse(zonescore < (1 / 3), 'Zone_1', ifelse(zonescore < (2 / 3), 'Zone_2', 'Zone_3'))
-  zone = factor(zone, levels = c('Zone_1', 'Zone_2', 'Zone_3'))
+  zone = factor(zone, levels = ZONES)
   names(zone) = colnames(mtx)
   zone
 }
 
-#' Apply the model to new values, returning the zonation as a gradient between 0 and 1
+#' Apply the model to new samples, returning the zonation per cell/spot as a gradient between 0 and 1
+#'
 #' @param mtx Gene expression matrix with genes as rows
 #' @param zone_obj Calibrated Zonation Object
 #' @return A vector of numeric zonation assignments (continuous)
@@ -174,4 +193,150 @@ getZonationGradient = function(mtx, zone_obj) {
   zone_continuous = apply_transformation(new_vec, zone_obj$baseline)
   names(zone_continuous) = colnames(mtx)
   zone_continuous
+}
+
+#' Use this function to infer zonation of all cell types based on their spatial interpolation within the zonation gradient.
+#' Zonation gradient is inferred from a subset of samples (if specified; e.g. hepatocytes) and then applied to all samples via interpolation.
+#' This function will return an output very similar to getZone, but may be slightly "smoothened".
+#' An additional benefit is that this can be used to infer zonation from hepatocytes, then applied to non-parenchymal cells based on proximity to zonated hepatocytes, rather than their own gene expresison.
+#'
+#' @param mtx Gene expression matrix with genes as rows
+#' @param coords Coordinate matrix with samples as rows, and columns `x` and `y`. Rownames of coords should match colnames of mtx.
+#' @param zone_obj Calibrated Zonation Object
+#' @param use_for_inference (optional) A vector of sample names which should be used for zonation inference (recommended to use only hepatocytes, if annotation is available). If not provided, all samples will be used.
+#' @return A vector of zonation assignments (discrete) for all samples
+#' @export
+getZoneSpatial = function(mtx, coords, zone_obj, use_for_inference = NULL) {
+  coords = data.frame(coords)
+  if (length(use_for_inference)) {
+    coords_subset = coords[rownames(coords) %in% use_for_inference,]
+    mtx = mtx[,colnames(mtx) %in% use_for_inference]
+  } else {
+    coords_subset = coords
+  }
+  interp_data = apply_interpolation(mtx, coords_subset, zone_obj)
+  ix = findInterval(coords$x, interp_data$x)
+  iy = findInterval(coords$y, interp_data$y)
+  ix[ix == 0] = 1
+  iy[iy == 0] = 1
+  ix[ix == length(interp_data$x)] = length(interp_data$x) - 1
+  iy[iy == length(interp_data$y)] = length(interp_data$y) - 1
+  interp_value = mapply(function(i, j, x0, y0) {
+    x1 = interp_data$x[i]; x2 = interp_data$x[i + 1]
+    y1 = interp_data$y[j]; y2 = interp_data$y[j + 1]
+    z11 = interp_data$z[i, j]; z21 = interp_data$z[i + 1, j]
+    z12 = interp_data$z[i, j + 1]; z22 = interp_data$z[i + 1, j + 1]
+    if (any(is.na(c(z11, z21, z12, z22)))) return(NA)
+    wx = (x0 - x1) / (x2 - x1)
+    wy = (y0 - y1) / (y2 - y1)
+    z = (1 - wx) * (1 - wy) * z11 + wx * (1 - wy) * z21 +
+      (1 - wx) * wy * z12 + wx * wy * z22
+    return(z)
+  }, ix, iy, coords$x, coords$y)
+  coords$zonation = interp_value
+  breaks = seq(0, 1, length.out = 4)
+  zone = cut(coords$zonation, breaks = breaks, labels = ZONES, include.lowest = TRUE)
+  zone = factor(zone, levels = ZONES)
+  names(zone) = rownames(coords)
+  zone
+}
+
+#' Plots the 2-dimensional interpolated zones in a spatial dataset
+#'
+#' @param mtx Gene expression matrix with genes as rows
+#' @param coords Coordinate matrix with samples as rows, and columns `x` and `y`. Rownames of coords should match colnames of mtx.
+#' @param zone_obj Calibrated Zonation Object
+#' @param use_for_inference (optional) A vector of sample names which should be used for zonation inference (recommended to use only hepatocytes, if annotation is available). If not provided, all samples will be used.
+#' @return A ggplot object
+#' @export
+plotZoneSpatial = function(mtx, coords, zone_obj, use_for_inference = NULL) {
+  coords = data.frame(coords)
+  if (length(use_for_inference)) {
+    coords_subset = coords[rownames(coords) %in% use_for_inference,]
+    mtx = mtx[,colnames(mtx) %in% use_for_inference]
+  } else {
+    coords_subset = coords
+  }
+  interp_data = apply_interpolation(mtx, coords_subset, zone_obj)
+  interp_df = data.frame(
+    x = rep(interp_data$x, times = length(interp_data$y)),
+    y = rep(interp_data$y, each = length(interp_data$x)),
+    z = as.vector(interp_data$z)
+  )
+  breaks = seq(0, 1, length.out = 4)
+  ggplot(interp_df, aes(x, y, z = z)) +
+    geom_contour_filled(breaks = breaks) +
+    coord_fixed() +
+    scale_fill_manual(name = 'Zone', labels = paste('Zone', 1:3), values = c('#333F48', '#C6AA76', '#BA0C2F')) # "Bull City" color scheme from https://r-graph-gallery.com/color-palette-finder
+}
+
+#' Plots the 2-dimensional interpolated zones with zonation contour outlines in a spatial dataset
+#'
+#' @param mtx Gene expression matrix with genes as rows
+#' @param coords Coordinate matrix with samples as rows, and columns `x` and `y`. Rownames of coords should match colnames of mtx.
+#' @param zone_obj Calibrated Zonation Object
+#' @param use_for_inference (optional) A vector of sample names which should be used for zonation inference (recommended to use only hepatocytes, if annotation is available). If not provided, all samples will be used.
+#' @return A ggplot object
+#' @export
+plotZoneSpatialContours = function(mtx, coords, zone_obj, use_for_inference = NULL) {
+  coords = data.frame(coords)
+  if (length(use_for_inference)) {
+    coords_subset = coords[rownames(coords) %in% use_for_inference,]
+    mtx_subset = mtx[,colnames(mtx) %in% use_for_inference]
+  } else {
+    coords_subset = coords
+    mtx_subset = mtx
+  }
+  interp_data = apply_interpolation(mtx_subset, coords_subset, zone_obj)
+  zone_assignments = getZonationGradient(mtx, zone_obj)
+  coords$zone = zone_assignments
+  interp_df = data.frame(
+    x = rep(interp_data$x, times = length(interp_data$y)),
+    y = rep(interp_data$y, each = length(interp_data$x)),
+    z = as.vector(interp_data$z)
+  )
+  breaks = seq(0, 1, length.out = 4)
+  ggplot(coords) +
+    geom_point(data = coords, aes(x = x, y = y, color = zone), size=1) +
+    scale_color_viridis_c(name = 'Zonation') +
+    geom_contour(data = interp_df,
+                aes(x = x, y = y, z = z),
+                breaks = breaks,
+                color = 'black',
+                linewidth = 2) +
+    coord_fixed()
+}
+
+#' Plots a custom variable with zonation contour outlines in a spatial dataset
+#'
+#' @param mtx Gene expression matrix with genes as rows
+#' @param meta Metadata matrix with samples as rows, and columns `x`, `y`, and `label`. Rownames of coords should match colnames of mtx.
+#' @param zone_obj Calibrated Zonation Object
+#' @param use_for_inference (optional) A vector of sample names which should be used for zonation inference (recommended to use only hepatocytes, if annotation is available). If not provided, all samples will be used.
+#' @return A ggplot object
+#' @export
+plotZoneSpatialCustom = function(mtx, meta, zone_obj, use_for_inference = NULL) {
+  meta = data.frame(meta)
+  if (length(use_for_inference)) {
+    meta_subset = meta[rownames(meta) %in% use_for_inference,]
+    mtx_subset = mtx[,colnames(mtx) %in% use_for_inference]
+  } else {
+    meta_subset = meta
+    mtx_subset = mtx
+  }
+  interp_data = apply_interpolation(mtx_subset, meta_subset, zone_obj)
+  interp_df = data.frame(
+    x = rep(interp_data$x, times = length(interp_data$y)),
+    y = rep(interp_data$y, each = length(interp_data$x)),
+    z = as.vector(interp_data$z)
+  )
+  breaks = seq(0, 1, length.out = 4)
+  ggplot(meta) +
+    geom_point(data = meta, aes(x = x, y = y, color = label), size=1) +
+    geom_contour(data = interp_df,
+                aes(x = x, y = y, z = z),
+                breaks = breaks,
+                color = 'black',
+                linewidth = 2) +
+    coord_fixed()
 }
