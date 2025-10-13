@@ -210,6 +210,13 @@ getZonationGradient = function(mtx, zone_obj) {
 #' @export
 getZoneSpatial = function(mtx, coords, zone_obj, resolution = 1, use_for_inference = NULL) {
   coords = data.frame(coords)
+  x_range = abs(range(coords$x)[[1]] - range(coords$x)[[2]])
+  if (x_range < 100) {
+    # Move into a reasonable range for interpolation
+    coords$x = coords$x * 100 / x_range
+    coords$y = coords$y * 100 / x_range
+    resolution = resolution * 100 / x_range
+  }
   if (length(use_for_inference)) {
     coords_subset = coords[rownames(coords) %in% use_for_inference,]
     mtx = mtx[,colnames(mtx) %in% use_for_inference]
@@ -254,6 +261,13 @@ getZoneSpatial = function(mtx, coords, zone_obj, resolution = 1, use_for_inferen
 #' @export
 plotZoneSpatial = function(mtx, coords, zone_obj, resolution = 1, use_for_inference = NULL) {
   coords = data.frame(coords)
+  x_range = abs(range(coords$x)[[1]] - range(coords$x)[[2]])
+  if (x_range < 100) {
+    # Move into a reasonable range for interpolation
+    coords$x = coords$x * 100 / x_range
+    coords$y = coords$y * 100 / x_range
+    resolution = resolution * 100 / x_range
+  }
   if (length(use_for_inference)) {
     coords_subset = coords[rownames(coords) %in% use_for_inference,]
     mtx = mtx[,colnames(mtx) %in% use_for_inference]
@@ -266,6 +280,11 @@ plotZoneSpatial = function(mtx, coords, zone_obj, resolution = 1, use_for_infere
     y = rep(interp_data$y, each = length(interp_data$x)),
     z = as.vector(interp_data$z)
   )
+  if (x_range < 100) {
+    # Transfer back to original space
+    interp_df$x = interp_df$x / 100 * x_range
+    interp_df$y = interp_df$y / 100 * x_range
+  }
   breaks = seq(0, 1, length.out = 4)
   ggplot(interp_df, aes(x, y, z = z)) +
     geom_contour_filled(breaks = breaks) +
@@ -284,6 +303,13 @@ plotZoneSpatial = function(mtx, coords, zone_obj, resolution = 1, use_for_infere
 #' @export
 plotZoneSpatialContours = function(mtx, coords, zone_obj, resolution = 1, use_for_inference = NULL) {
   coords = data.frame(coords)
+  x_range = abs(range(coords$x)[[1]] - range(coords$x)[[2]])
+  if (x_range < 100) {
+    # Move into a reasonable range for interpolation
+    coords$x = coords$x * 100 / x_range
+    coords$y = coords$y * 100 / x_range
+    resolution = resolution * 100 / x_range
+  }
   if (length(use_for_inference)) {
     coords_subset = coords[rownames(coords) %in% use_for_inference,]
     mtx_subset = mtx[,colnames(mtx) %in% use_for_inference]
@@ -299,6 +325,11 @@ plotZoneSpatialContours = function(mtx, coords, zone_obj, resolution = 1, use_fo
     y = rep(interp_data$y, each = length(interp_data$x)),
     z = as.vector(interp_data$z)
   )
+  if (x_range < 100) {
+    # Transfer back to original space
+    interp_df$x = interp_df$x / 100 * x_range
+    interp_df$y = interp_df$y / 100 * x_range
+  }
   breaks = seq(0, 1, length.out = 4)
   ggplot(coords) +
     geom_point(data = coords, aes(x = x, y = y, color = zone), size=1) +
@@ -322,6 +353,13 @@ plotZoneSpatialContours = function(mtx, coords, zone_obj, resolution = 1, use_fo
 #' @export
 plotZoneSpatialCustom = function(mtx, meta, zone_obj, resolution = 1, use_for_inference = NULL) {
   meta = data.frame(meta)
+  x_range = abs(range(meta$x)[[1]] - range(meta$x)[[2]])
+  if (x_range < 100) {
+    # Move into a reasonable range for interpolation
+    meta$x = meta$x * 100 / x_range
+    meta$y = meta$y * 100 / x_range
+    resolution = resolution * 100 / x_range
+  }
   if (length(use_for_inference)) {
     meta_subset = meta[rownames(meta) %in% use_for_inference,]
     mtx_subset = mtx[,colnames(mtx) %in% use_for_inference]
@@ -335,6 +373,11 @@ plotZoneSpatialCustom = function(mtx, meta, zone_obj, resolution = 1, use_for_in
     y = rep(interp_data$y, each = length(interp_data$x)),
     z = as.vector(interp_data$z)
   )
+  if (x_range < 100) {
+    # Transfer back to original space
+    interp_df$x = interp_df$x / 100 * x_range
+    interp_df$y = interp_df$y / 100 * x_range
+  }
   breaks = seq(0, 1, length.out = 4)
   ggplot(meta) +
     geom_point(data = meta, aes(x = x, y = y, color = label), size=1) +
