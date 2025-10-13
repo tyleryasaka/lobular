@@ -129,7 +129,7 @@ apply_interpolation = function(mtx, coords, zone_obj, resolution = 1) {
   coords$zonation = getZonationGradient(mtx, zone_obj)
   nx = abs((range(coords$x)[[1]] - range(coords$x)[[2]]) / 300 * resolution)
   ny = abs((range(coords$y)[[1]] - range(coords$y)[[2]]) / 300 * resolution)
-  with(coords, interp(x, y, zonation, duplicate = "mean", linear = TRUE, extrap = FALSE, nx = nx, ny = ny))
+  with(coords, akima::interp(x, y, zonation, duplicate = "mean", linear = TRUE, extrap = FALSE, nx = nx, ny = ny))
 }
 
 #' Calibrate the model to baseline liver zonation
