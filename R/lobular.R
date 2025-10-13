@@ -122,12 +122,13 @@ apply_transformation = function(new_values, original_values) {
 #' @param mtx Gene expression matrix with genes as rows
 #' @param coords Coordinate matrix with samples as rows, and columns `x` and `y`. Rownames of coords should match colnames of mtx.
 #' @param zone_obj Calibrated Zonation Object
+#' @param resolution Optional numeric value for the resolution, where higher value results in a more granular interpolation (default 1)
 #' @return An interpolation data frame
 #' @noRd
-apply_interpolation = function(mtx, coords, zone_obj) {
+apply_interpolation = function(mtx, coords, zone_obj, resolution = 1) {
   coords$zonation = getZonationGradient(mtx, zone_obj)
-  nx = abs((range(coords$x)[[1]] - range(coords$x)[[2]]) / 300)
-  ny = abs((range(coords$y)[[1]] - range(coords$y)[[2]]) / 300)
+  nx = abs((range(coords$x)[[1]] - range(coords$x)[[2]]) / 300 * resolution)
+  ny = abs((range(coords$y)[[1]] - range(coords$y)[[2]]) / 300 * resolution)
   with(coords, interp(x, y, zonation, duplicate = "mean", linear = TRUE, extrap = FALSE, nx = nx, ny = ny))
 }
 
@@ -203,10 +204,11 @@ getZonationGradient = function(mtx, zone_obj) {
 #' @param mtx Gene expression matrix with genes as rows
 #' @param coords Coordinate matrix with samples as rows, and columns `x` and `y`. Rownames of coords should match colnames of mtx.
 #' @param zone_obj Calibrated Zonation Object
+#' @param resolution Optional numeric value for the resolution, where higher value results in a more granular interpolation (default 1)
 #' @param use_for_inference (optional) A vector of sample names which should be used for zonation inference (recommended to use only hepatocytes, if annotation is available). If not provided, all samples will be used.
 #' @return A vector of zonation assignments (discrete) for all samples
 #' @export
-getZoneSpatial = function(mtx, coords, zone_obj, use_for_inference = NULL) {
+getZoneSpatial = function(mtx, coords, zone_obj, resolution = 1, use_for_inference = NULL) {
   coords = data.frame(coords)
   if (length(use_for_inference)) {
     coords_subset = coords[rownames(coords) %in% use_for_inference,]
@@ -214,7 +216,7 @@ getZoneSpatial = function(mtx, coords, zone_obj, use_for_inference = NULL) {
   } else {
     coords_subset = coords
   }
-  interp_data = apply_interpolation(mtx, coords_subset, zone_obj)
+  interp_data = apply_interpolation(mtx, coords_subset, zone_obj, resolution)
   ix = findInterval(coords$x, interp_data$x)
   iy = findInterval(coords$y, interp_data$y)
   ix[ix == 0] = 1
@@ -246,10 +248,11 @@ getZoneSpatial = function(mtx, coords, zone_obj, use_for_inference = NULL) {
 #' @param mtx Gene expression matrix with genes as rows
 #' @param coords Coordinate matrix with samples as rows, and columns `x` and `y`. Rownames of coords should match colnames of mtx.
 #' @param zone_obj Calibrated Zonation Object
+#' @param resolution Optional numeric value for the resolution, where higher value results in a more granular interpolation (default 1)
 #' @param use_for_inference (optional) A vector of sample names which should be used for zonation inference (recommended to use only hepatocytes, if annotation is available). If not provided, all samples will be used.
 #' @return A ggplot object
 #' @export
-plotZoneSpatial = function(mtx, coords, zone_obj, use_for_inference = NULL) {
+plotZoneSpatial = function(mtx, coords, zone_obj, resolution = 1, use_for_inference = NULL) {
   coords = data.frame(coords)
   if (length(use_for_inference)) {
     coords_subset = coords[rownames(coords) %in% use_for_inference,]
@@ -257,7 +260,7 @@ plotZoneSpatial = function(mtx, coords, zone_obj, use_for_inference = NULL) {
   } else {
     coords_subset = coords
   }
-  interp_data = apply_interpolation(mtx, coords_subset, zone_obj)
+  interp_data = apply_interpolation(mtx, coords_subset, zone_obj, resolution)
   interp_df = data.frame(
     x = rep(interp_data$x, times = length(interp_data$y)),
     y = rep(interp_data$y, each = length(interp_data$x)),
@@ -275,10 +278,11 @@ plotZoneSpatial = function(mtx, coords, zone_obj, use_for_inference = NULL) {
 #' @param mtx Gene expression matrix with genes as rows
 #' @param coords Coordinate matrix with samples as rows, and columns `x` and `y`. Rownames of coords should match colnames of mtx.
 #' @param zone_obj Calibrated Zonation Object
+#' @param resolution Optional numeric value for the resolution, where higher value results in a more granular interpolation (default 1)
 #' @param use_for_inference (optional) A vector of sample names which should be used for zonation inference (recommended to use only hepatocytes, if annotation is available). If not provided, all samples will be used.
 #' @return A ggplot object
 #' @export
-plotZoneSpatialContours = function(mtx, coords, zone_obj, use_for_inference = NULL) {
+plotZoneSpatialContours = function(mtx, coords, zone_obj, resolution = 1, use_for_inference = NULL) {
   coords = data.frame(coords)
   if (length(use_for_inference)) {
     coords_subset = coords[rownames(coords) %in% use_for_inference,]
@@ -287,7 +291,7 @@ plotZoneSpatialContours = function(mtx, coords, zone_obj, use_for_inference = NU
     coords_subset = coords
     mtx_subset = mtx
   }
-  interp_data = apply_interpolation(mtx_subset, coords_subset, zone_obj)
+  interp_data = apply_interpolation(mtx_subset, coords_subset, zone_obj, resolution)
   zone_assignments = getZonationGradient(mtx, zone_obj)
   coords$zone = zone_assignments
   interp_df = data.frame(
@@ -312,10 +316,11 @@ plotZoneSpatialContours = function(mtx, coords, zone_obj, use_for_inference = NU
 #' @param mtx Gene expression matrix with genes as rows
 #' @param meta Metadata matrix with samples as rows, and columns `x`, `y`, and `label`. Rownames of coords should match colnames of mtx.
 #' @param zone_obj Calibrated Zonation Object
+#' @param resolution Optional numeric value for the resolution, where higher value results in a more granular interpolation (default 1)
 #' @param use_for_inference (optional) A vector of sample names which should be used for zonation inference (recommended to use only hepatocytes, if annotation is available). If not provided, all samples will be used.
 #' @return A ggplot object
 #' @export
-plotZoneSpatialCustom = function(mtx, meta, zone_obj, use_for_inference = NULL) {
+plotZoneSpatialCustom = function(mtx, meta, zone_obj, resolution = 1, use_for_inference = NULL) {
   meta = data.frame(meta)
   if (length(use_for_inference)) {
     meta_subset = meta[rownames(meta) %in% use_for_inference,]
@@ -324,7 +329,7 @@ plotZoneSpatialCustom = function(mtx, meta, zone_obj, use_for_inference = NULL) 
     meta_subset = meta
     mtx_subset = mtx
   }
-  interp_data = apply_interpolation(mtx_subset, meta_subset, zone_obj)
+  interp_data = apply_interpolation(mtx_subset, meta_subset, zone_obj, resolution)
   interp_df = data.frame(
     x = rep(interp_data$x, times = length(interp_data$y)),
     y = rep(interp_data$y, each = length(interp_data$x)),

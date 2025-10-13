@@ -111,6 +111,7 @@ getZoneSpatial(mtx, coords, zone_obj, use_for_inference = NULL)
 - `mtx`: Gene expression matrix with genes as rows.
 - `coords`: Coordinate matrix with columns `x` and `y`; rownames match `mtx` colnames.
 - `zone_obj`: Calibrated `ZonationObject`.
+- `resolution`: Optional numeric value for the resolution, where higher value results in a more granular interpolation (default 1)
 - `use_for_inference`: Optional vector of sample names to use for zonation inference (e.g., hepatocytes).
 
 **Returns:**
@@ -131,6 +132,7 @@ plotZoneSpatial(mtx, coords, zone_obj, use_for_inference = NULL)
 - `mtx`: Gene expression matrix with genes as rows.
 - `coords`: Coordinate matrix with columns `x` and `y`.
 - `zone_obj`: Calibrated `ZonationObject`.
+- `resolution`: Optional numeric value for the resolution, where higher value results in a more granular interpolation (default 1)
 - `use_for_inference`: Optional subset of samples for inference.
 
 **Returns:**
@@ -151,6 +153,7 @@ plotZoneSpatialContours(mtx, coords, zone_obj, use_for_inference = NULL)
 - `mtx`: Gene expression matrix with genes as rows.
 - `coords`: Coordinate matrix with columns `x` and `y`.
 - `zone_obj`: Calibrated `ZonationObject`.
+- `resolution`: Optional numeric value for the resolution, where higher value results in a more granular interpolation (default 1)
 - `use_for_inference`: Optional subset of samples for inference.
 
 **Returns:**
@@ -171,6 +174,7 @@ plotZoneSpatialCustom(mtx, meta, zone_obj, use_for_inference = NULL)
 - `mtx`: Gene expression matrix with genes as rows.
 - `meta`: Metadata matrix with columns `x`, `y`, and `label`.
 - `zone_obj`: Calibrated `ZonationObject`.
+- `resolution`: Optional numeric value for the resolution, where higher value results in a more granular interpolation (default 1)
 - `use_for_inference`: Optional subset of samples for inference.
 
 **Returns:**
