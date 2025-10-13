@@ -55,7 +55,7 @@ setBaseline(mtx, species = 'human')
 
 **Arguments:**
 - `mtx`: Gene expression matrix with genes as rows.
-- `coords` (Optional) For spatial data, calibrates to the dimensions of the baseline sample. Coordinate matrix with samples as rows, and columns `x` and `y`.
+- `coords`: (Optional) For spatial data, calibrates to the dimensions of the baseline sample. Coordinate matrix with samples as rows, and columns `x` and `y`.
 - `species`: (Optional) Species to use; defaults to `'human'`. Supports `'mouse'` and `'human'`.
 
 **Returns:**
@@ -173,7 +173,8 @@ plotZoneSpatialCustom(mtx, meta, zone_obj, use_for_inference = NULL)
 
 **Arguments:**
 - `mtx`: Gene expression matrix with genes as rows.
-- `meta`: Metadata matrix with columns `x`, `y`, and `label`.
+- `meta`: Metadata matrix with samples as rows, and columns `x`, `y`, and `mycolname`, where `mycolname` is passed as `colname`. Rownames of coords should match colnames of mtx.
+- `colname`: Name of custom column in `meta`
 - `zone_obj`: Calibrated `ZonationObject`.
 - `resolution`: Optional numeric value for the resolution, where higher value results in a more granular interpolation (default 1)
 - `use_for_inference`: Optional subset of samples for inference.

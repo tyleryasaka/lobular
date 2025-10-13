@@ -259,7 +259,7 @@ getZoneSpatial = function(mtx, coords, zone_obj, resolution = 1, use_for_inferen
     return(z)
   }, ix, iy, coords$x, coords$y)
   coords$zonation = interp_value
-  breaks = seq(0, 1, length.out = 4)
+  breaks = seq(1, 3, length.out = 4)
   zone = cut(coords$zonation, breaks = breaks, labels = ZONES, include.lowest = TRUE)
   zone = factor(zone, levels = ZONES)
   names(zone) = rownames(coords)
@@ -301,7 +301,7 @@ plotZoneSpatial = function(mtx, coords, zone_obj, resolution = 1, use_for_infere
     interp_df$x = interp_df$x / scale_factor
     interp_df$y = interp_df$y / scale_factor
   }
-  breaks = seq(0, 1, length.out = 4)
+  breaks = seq(1, 3, length.out = 4)
   ggplot(interp_df, aes(x, y, z = z)) +
     geom_contour_filled(breaks = breaks) +
     coord_fixed() +
@@ -363,13 +363,14 @@ plotZoneSpatialContours = function(mtx, coords, zone_obj, resolution = 1, use_fo
 #' Plots a custom variable with zonation contour outlines in a spatial dataset
 #'
 #' @param mtx Gene expression matrix with genes as rows
-#' @param meta Metadata matrix with samples as rows, and columns `x`, `y`, and `label`. Rownames of coords should match colnames of mtx.
+#' @param meta Metadata matrix with samples as rows, and columns `x`, `y`, and `mycolname`, where `mycolname` is passed as `colname`. Rownames of coords should match colnames of mtx.
+#' @param colname Name of custom column in `meta`
 #' @param zone_obj Calibrated Zonation Object
 #' @param resolution Optional numeric value for the resolution, where higher value results in a more granular interpolation (default 1)
 #' @param use_for_inference (optional) A vector of sample names which should be used for zonation inference (recommended to use only hepatocytes, if annotation is available). If not provided, all samples will be used.
 #' @return A ggplot object
 #' @export
-plotZoneSpatialCustom = function(mtx, meta, zone_obj, resolution = 1, use_for_inference = NULL) {
+plotZoneSpatialCustom = function(mtx, meta, col_name, zone_obj, resolution = 1, use_for_inference = NULL) {
   meta = data.frame(meta)
   scale_factor = zone_obj$scale_factor
   if (scale_factor > 1) {
@@ -400,7 +401,7 @@ plotZoneSpatialCustom = function(mtx, meta, zone_obj, resolution = 1, use_for_in
   }
   breaks = seq(1, 3, length.out = 4)
   ggplot(meta) +
-    geom_point(data = meta, aes(x = x, y = y, color = label), size=1) +
+    geom_point(data = meta, aes(x = x, y = y, color = .data[[col_name]]), size=1) +
     geom_contour(data = interp_df,
                 aes(x = x, y = y, z = z),
                 breaks = breaks,
