@@ -37,7 +37,7 @@ zonation_obj <- setBaseline(Seurat::GetAssayData(seurat_baseline, slot = 'data')
 zonation_assignments <- getZone(Seurat::GetAssayData(seurat_obj, slot = 'data'), zonation_obj)
 seurat_obj <- AddMetaData(seurat_obj, zonation_assignments, col.name = 'zone')
 
-# Obtain a continuous zonation gradient for entire dataset, normalized to the baseline (0 = portal triad, 1 = central vein)
+# Obtain a continuous zonation gradient for entire dataset, normalized to the baseline
 zonation_gradient <- getZonationGradient(Seurat::GetAssayData(seurat_obj, slot = 'data'), zonation_obj)
 seurat_obj <- AddMetaData(seurat_obj, zonation_gradient, col.name = 'zonation')
 ```
@@ -55,7 +55,8 @@ setBaseline(mtx, species = 'human')
 
 **Arguments:**
 - `mtx`: Gene expression matrix with genes as rows.
-- `species`: Species to use; defaults to `'human'`. Supports `'mouse'` and `'human'`.
+- `coords` (Optional) For spatial data, calibrates to the dimensions of the baseline sample. Coordinate matrix with samples as rows, and columns `x` and `y`.
+- `species`: (Optional) Species to use; defaults to `'human'`. Supports `'mouse'` and `'human'`.
 
 **Returns:**
 - A `ZonationObject` with calibrated baseline zonation.
