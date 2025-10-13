@@ -10,7 +10,7 @@ ZONES = c('Zone_1', 'Zone_2', 'Zone_3')
 #'   \item{species}{Species used for analysis}
 #'   \item{factors}{Gene-level zonation factors}
 #' @export
-ZonationObject = function(baseline, species, factors) {
+ZonationObject = function(baseline, species, factors, scale_factor) {
   # Input validation
   if (!is.numeric(baseline)) {
     stop("baseline must be numeric")
@@ -21,12 +21,16 @@ ZonationObject = function(baseline, species, factors) {
   if (!is.numeric(factors) || is.null(names(factors))) {
     stop("factors must be a named numeric vector")
   }
+  if (!is.numeric(scale_factor) || is.null(scale_factor)) {
+    stop("scale_factor must be a number")
+  }
 
   # Create the object
   obj = list(
     baseline = baseline,
     species = species,
-    factors = factors
+    factors = factors,
+    scale_factor = scale_factor
   )
 
   class(obj) = "ZonationObject"
@@ -42,6 +46,7 @@ print.ZonationObject = function(x, ...) {
   cat("Species:", x$species, "\n")
   cat("Number of genes:", length(x$factors), "\n")
   cat("Baseline samples:", length(x$baseline), "\n")
+  cat("Sale factor:", x$scale_factor, "\n")
   invisible(x)
 }
 
@@ -58,6 +63,7 @@ summary.ZonationObject = function(object, ...) {
   cat("\nBaseline distribution:\n")
   print(summary(object$baseline))
   cat("\nFactor range:", range(object$factors), "\n")
+  cat("Sale factor:", object$scale_factor, "\n")
   invisible(object)
 }
 
@@ -135,10 +141,11 @@ apply_interpolation = function(mtx, coords, zone_obj, resolution = 1) {
 #' Calibrate the model to baseline liver zonation
 #'
 #' @param mtx Gene expression matrix with genes as rows
-#' @param species Species to use, defaults to human. Currently supports 'mouse' and 'human'.
+#' coords (Optional) For spatial data, calibrates to the dimensions of the baseline sample. Coordinate matrix with samples as rows, and columns `x` and `y`.
+#' @param species (Optional) Species to use, defaults to human. Currently supports 'mouse' and 'human'.
 #' @return A \code{ZonationObject} with calibrated baseline zonation
 #' @export
-setBaseline = function(mtx, species = 'human') {
+setBaseline = function(mtx, coords = NULL, species = 'human') {
   hep_zonated = read.csv(system.file('extdata', 'xu_naturegenetics_2024_hepatocyte_zonated_genes.csv', package = 'lobular'))
   layers = sapply(1:9, function(x) paste0('Layer.', x))
   hep_zonated$zonation = apply(hep_zonated, 1, function(row) {
@@ -159,11 +166,20 @@ setBaseline = function(mtx, species = 'human') {
   factors.zonated = hep_zonated$zonation
   names(factors.zonated) = hep_zonated$Gene_converted
 
+  scale_factor = 1
+  if (!is.null(coords)) {
+    x_range = abs(range(coords$x)[[1]] - range(coords$x)[[2]])
+    if (x_range < 100) {
+      scale_factor = 50
+    }
+  }
+
   zonescore_raw = getGeneAvg(mtx, factors.zonated)
   zone_obj = ZonationObject(
     baseline = zonescore_raw,
     species = species,
-    factors = factors.zonated
+    factors = factors.zonated,
+    scale_factor = scale_factor
   )
   zone_obj
 }
@@ -210,12 +226,12 @@ getZonationGradient = function(mtx, zone_obj) {
 #' @export
 getZoneSpatial = function(mtx, coords, zone_obj, resolution = 1, use_for_inference = NULL) {
   coords = data.frame(coords)
-  x_range = abs(range(coords$x)[[1]] - range(coords$x)[[2]])
-  if (x_range < 100) {
+  scale_factor = zone_obj$scale_factor
+  if (scale_factor > 1) {
     # Move into a reasonable range for interpolation
-    coords$x = coords$x * 100 / x_range
-    coords$y = coords$y * 100 / x_range
-    resolution = resolution * 100 / x_range
+    coords$x = coords$x * scale_factor
+    coords$y = coords$y * scale_factor
+    resolution = resolution * scale_factor
   }
   if (length(use_for_inference)) {
     coords_subset = coords[rownames(coords) %in% use_for_inference,]
@@ -261,12 +277,12 @@ getZoneSpatial = function(mtx, coords, zone_obj, resolution = 1, use_for_inferen
 #' @export
 plotZoneSpatial = function(mtx, coords, zone_obj, resolution = 1, use_for_inference = NULL) {
   coords = data.frame(coords)
-  x_range = abs(range(coords$x)[[1]] - range(coords$x)[[2]])
-  if (x_range < 100) {
+  scale_factor = zone_obj$scale_factor
+  if (scale_factor > 1) {
     # Move into a reasonable range for interpolation
-    coords$x = coords$x * 100 / x_range
-    coords$y = coords$y * 100 / x_range
-    resolution = resolution * 100 / x_range
+    coords$x = coords$x * scale_factor
+    coords$y = coords$y * scale_factor
+    resolution = resolution * scale_factor
   }
   if (length(use_for_inference)) {
     coords_subset = coords[rownames(coords) %in% use_for_inference,]
@@ -280,10 +296,10 @@ plotZoneSpatial = function(mtx, coords, zone_obj, resolution = 1, use_for_infere
     y = rep(interp_data$y, each = length(interp_data$x)),
     z = as.vector(interp_data$z)
   )
-  if (x_range < 100) {
+  if (scale_factor > 1) {
     # Transfer back to original space
-    interp_df$x = interp_df$x / 100 * x_range
-    interp_df$y = interp_df$y / 100 * x_range
+    interp_df$x = interp_df$x / scale_factor
+    interp_df$y = interp_df$y / scale_factor
   }
   breaks = seq(0, 1, length.out = 4)
   ggplot(interp_df, aes(x, y, z = z)) +
@@ -303,12 +319,12 @@ plotZoneSpatial = function(mtx, coords, zone_obj, resolution = 1, use_for_infere
 #' @export
 plotZoneSpatialContours = function(mtx, coords, zone_obj, resolution = 1, use_for_inference = NULL) {
   coords = data.frame(coords)
-  x_range = abs(range(coords$x)[[1]] - range(coords$x)[[2]])
-  if (x_range < 100) {
+  scale_factor = zone_obj$scale_factor
+  if (scale_factor > 1) {
     # Move into a reasonable range for interpolation
-    coords$x = coords$x * 100 / x_range
-    coords$y = coords$y * 100 / x_range
-    resolution = resolution * 100 / x_range
+    coords$x = coords$x * scale_factor
+    coords$y = coords$y * scale_factor
+    resolution = resolution * scale_factor
   }
   if (length(use_for_inference)) {
     coords_subset = coords[rownames(coords) %in% use_for_inference,]
@@ -325,10 +341,12 @@ plotZoneSpatialContours = function(mtx, coords, zone_obj, resolution = 1, use_fo
     y = rep(interp_data$y, each = length(interp_data$x)),
     z = as.vector(interp_data$z)
   )
-  if (x_range < 100) {
+  if (scale_factor > 1) {
     # Transfer back to original space
-    interp_df$x = interp_df$x / 100 * x_range
-    interp_df$y = interp_df$y / 100 * x_range
+    coords$x = coords$x / scale_factor
+    coords$y = coords$y / scale_factor
+    interp_df$x = interp_df$x / scale_factor
+    interp_df$y = interp_df$y / scale_factor
   }
   breaks = seq(0, 1, length.out = 4)
   ggplot(coords) +
@@ -353,12 +371,12 @@ plotZoneSpatialContours = function(mtx, coords, zone_obj, resolution = 1, use_fo
 #' @export
 plotZoneSpatialCustom = function(mtx, meta, zone_obj, resolution = 1, use_for_inference = NULL) {
   meta = data.frame(meta)
-  x_range = abs(range(meta$x)[[1]] - range(meta$x)[[2]])
-  if (x_range < 100) {
+  scale_factor = zone_obj$scale_factor
+  if (scale_factor > 1) {
     # Move into a reasonable range for interpolation
-    meta$x = meta$x * 100 / x_range
-    meta$y = meta$y * 100 / x_range
-    resolution = resolution * 100 / x_range
+    coords$x = coords$x * scale_factor
+    coords$y = coords$y * scale_factor
+    resolution = resolution * scale_factor
   }
   if (length(use_for_inference)) {
     meta_subset = meta[rownames(meta) %in% use_for_inference,]
@@ -373,10 +391,12 @@ plotZoneSpatialCustom = function(mtx, meta, zone_obj, resolution = 1, use_for_in
     y = rep(interp_data$y, each = length(interp_data$x)),
     z = as.vector(interp_data$z)
   )
-  if (x_range < 100) {
+  if (scale_factor > 1) {
     # Transfer back to original space
-    interp_df$x = interp_df$x / 100 * x_range
-    interp_df$y = interp_df$y / 100 * x_range
+    coords$x = coords$x / scale_factor
+    coords$y = coords$y / scale_factor
+    interp_df$x = interp_df$x / scale_factor
+    interp_df$y = interp_df$y / scale_factor
   }
   breaks = seq(0, 1, length.out = 4)
   ggplot(meta) +
