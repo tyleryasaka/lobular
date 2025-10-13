@@ -199,7 +199,7 @@ getZone = function(mtx, zone_obj) {
   zone
 }
 
-#' Apply the model to new samples, returning the zonation per cell/spot as a gradient between 0 and 1
+#' Apply the model to new samples, returning the zonation per cell/spot as a gradient between 1 and 3
 #'
 #' @param mtx Gene expression matrix with genes as rows
 #' @param zone_obj Calibrated Zonation Object
@@ -209,7 +209,7 @@ getZonationGradient = function(mtx, zone_obj) {
   new_vec = getGeneAvg(mtx, zone_obj$factors)
   zone_continuous = apply_transformation(new_vec, zone_obj$baseline)
   names(zone_continuous) = colnames(mtx)
-  zone_continuous
+  zone_continuous * 2 + 1
 }
 
 #' Use this function to infer zonation of all cell types based on their spatial interpolation within the zonation gradient.
