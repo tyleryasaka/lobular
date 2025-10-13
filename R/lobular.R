@@ -374,8 +374,8 @@ plotZoneSpatialCustom = function(mtx, meta, zone_obj, resolution = 1, use_for_in
   scale_factor = zone_obj$scale_factor
   if (scale_factor > 1) {
     # Move into a reasonable range for interpolation
-    coords$x = coords$x * scale_factor
-    coords$y = coords$y * scale_factor
+    meta$x = meta$x * scale_factor
+    meta$y = meta$y * scale_factor
     resolution = resolution * scale_factor
   }
   if (length(use_for_inference)) {
@@ -393,8 +393,8 @@ plotZoneSpatialCustom = function(mtx, meta, zone_obj, resolution = 1, use_for_in
   )
   if (scale_factor > 1) {
     # Transfer back to original space
-    coords$x = coords$x / scale_factor
-    coords$y = coords$y / scale_factor
+    meta$x = meta$x / scale_factor
+    meta$y = meta$y / scale_factor
     interp_df$x = interp_df$x / scale_factor
     interp_df$y = interp_df$y / scale_factor
   }
