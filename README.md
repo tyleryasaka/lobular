@@ -38,7 +38,7 @@ zonation_assignments <- getZone(Seurat::GetAssayData(seurat_obj, slot = 'data'),
 seurat_obj <- AddMetaData(seurat_obj, zonation_assignments, col.name = 'zone')
 
 # Obtain a continuous zonation gradient for entire dataset, normalized to the baseline
-zonation_gradient <- getZonationGradient(Seurat::GetAssayData(seurat_obj, slot = 'data'), zonation_obj)
+zonation_gradient <- getZonationGradient(Seurat::GetAssayData(seurat_obj, layer = 'data'), zonation_obj)
 seurat_obj <- AddMetaData(seurat_obj, zonation_gradient, col.name = 'zonation')
 ```
 
