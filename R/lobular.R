@@ -73,24 +73,9 @@ summary.ZonationObject = function(object, ...) {
 #' @return A vector of human gene names
 #' @noRd
 mouseToHuman = function(mouse_genes) {
-  mouse_entrez = AnnotationDbi::mapIds(org.Mm.eg.db::org.Mm.eg.db,
-                        keys = mouse_genes,
-                        column = "ENTREZID",
-                        keytype = "SYMBOL",
-                        multiVals = "first")
-  human_genes_simple = toupper(mouse_genes)
-  human_genes_verified = AnnotationDbi::mapIds(org.Hs.eg.db::org.Hs.eg.db,
-                                keys = human_genes_simple,
-                                column = "SYMBOL",
-                                keytype = "SYMBOL",
-                                multiVals = "first")
-  result = data.frame(
-    mouse_symbol = mouse_genes,
-    mouse_entrez = mouse_entrez,
-    human_symbol = human_genes_verified,
-    stringsAsFactors = FALSE
-  )
-  return(result$human_symbol)
+  mouse_genes_valid = mouse_genes[!is.na(mouse_genes)]
+  conversion = orthogene::convert_orthologs(gene_df=mouse_genes_valid, method = 'gprofiler', gene_output='dict', input_species='mouse', output_species='human', non121_strategy='keep_popular', agg_fun = 'sum')
+  sapply(mouse_genes, function(gene) ifelse(gene %in% mouse_genes_valid, conversion[gene], NA))
 }
 
 #' Obtain a weighted average of genes from a gene expression matrix
@@ -161,6 +146,7 @@ setBaseline = function(mtx, coords = NULL, species = 'human') {
   } else {
     stop("Only 'human' and 'mouse' species are supported at the moment. (Specify with species = 'mouse'")
   }
+  hep_zonated = hep_zonated[!is.na(hep_zonated$Gene_converted),]
   genes.zonated = intersect(hep_zonated$Gene_converted, rownames(mtx))
   hep_zonated = hep_zonated[hep_zonated$Gene_converted %in% genes.zonated,]
   factors.zonated = hep_zonated$zonation
