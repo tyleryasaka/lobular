@@ -155,6 +155,7 @@ plotZoneSpatialContours(mtx, coords, zone_obj, use_for_inference = NULL)
 - `coords`: Coordinate matrix with columns `x` and `y`.
 - `zone_obj`: Calibrated `ZonationObject`.
 - `resolution`: Optional numeric value for the resolution, where higher value results in a more granular interpolation (default 1)
+- `point_size`: Optional numeric value for the ggplot point size (default 1)
 - `use_for_inference`: Optional subset of samples for inference.
 
 **Returns:**
@@ -177,6 +178,7 @@ plotZoneSpatialCustom(mtx, meta, zone_obj, use_for_inference = NULL)
 - `colname`: Name of custom column in `meta`
 - `zone_obj`: Calibrated `ZonationObject`.
 - `resolution`: Optional numeric value for the resolution, where higher value results in a more granular interpolation (default 1)
+- `point_size`: Optional numeric value for the ggplot point size (default 1)
 - `use_for_inference`: Optional subset of samples for inference.
 
 **Returns:**

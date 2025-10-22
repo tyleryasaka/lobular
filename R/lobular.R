@@ -131,26 +131,25 @@ apply_interpolation = function(mtx, coords, zone_obj, resolution = 1) {
 #' @return A \code{ZonationObject} with calibrated baseline zonation
 #' @export
 setBaseline = function(mtx, coords = NULL, species = 'human') {
-  hep_zonated = read.csv(system.file('extdata', 'xu_naturegenetics_2024_hepatocyte_zonated_genes.csv', package = 'lobular'))
-  layers = sapply(1:9, function(x) paste0('Layer.', x))
-  hep_zonated$zonation = apply(hep_zonated, 1, function(row) {
-    vec = as.numeric(row[layers])
-    vec = expanded_data = rep(1:length(vec), times = round(vec * 100))
-    moments::skewness(vec)
-  })
-
   if (species == 'human') {
-    hep_zonated$Gene_converted = mouseToHuman(hep_zonated$Gene)
+    hep_zonated = data.frame(read.csv(system.file('extdata', 'visium_human_regions.csv', package = 'lobular'), row.names = 1))
   } else if (species == 'mouse') {
-    hep_zonated$Gene_converted = hep_zonated$Gene
+    hep_zonated = read.csv(system.file('extdata', 'xu_naturegenetics_2024_hepatocyte_zonated_genes.csv', package = 'lobular'))
+    layers = sapply(1:9, function(x) paste0('Layer.', x))
+    hep_zonated$zonation = apply(hep_zonated, 1, function(row) {
+      vec = as.numeric(row[layers])
+      vec = expanded_data = rep(1:length(vec), times = round(vec * 100))
+      moments::skewness(vec)
+    })
+    hep_zonated = hep_zonated[!is.na(hep_zonated$Gene),]
+    rownames(hep_zonated) = hep_zonated$Gene
   } else {
     stop("Only 'human' and 'mouse' species are supported at the moment. (Specify with species = 'mouse'")
   }
-  hep_zonated = hep_zonated[!is.na(hep_zonated$Gene_converted),]
-  genes.zonated = intersect(hep_zonated$Gene_converted, rownames(mtx))
-  hep_zonated = hep_zonated[hep_zonated$Gene_converted %in% genes.zonated,]
+
+  hep_zonated = hep_zonated[rownames(hep_zonated) %in% rownames(mtx),]
   factors.zonated = hep_zonated$zonation
-  names(factors.zonated) = hep_zonated$Gene_converted
+  names(factors.zonated) = rownames(hep_zonated)
 
   scale_factor = 1
   if (!is.null(coords)) {
@@ -300,10 +299,11 @@ plotZoneSpatial = function(mtx, coords, zone_obj, resolution = 1, use_for_infere
 #' @param coords Coordinate matrix with samples as rows, and columns `x` and `y`. Rownames of coords should match colnames of mtx.
 #' @param zone_obj Calibrated Zonation Object
 #' @param resolution Optional numeric value for the resolution, where higher value results in a more granular interpolation (default 1)
+#' @param point_size Optional numeric value for the ggplot point size (default 1)
 #' @param use_for_inference (optional) A vector of sample names which should be used for zonation inference (recommended to use only hepatocytes, if annotation is available). If not provided, all samples will be used.
 #' @return A ggplot object
 #' @export
-plotZoneSpatialContours = function(mtx, coords, zone_obj, resolution = 1, use_for_inference = NULL) {
+plotZoneSpatialContours = function(mtx, coords, zone_obj, resolution = 1, point_size = 1, plot_options = NULL, use_for_inference = NULL) {
   coords = data.frame(coords)
   scale_factor = zone_obj$scale_factor
   if (scale_factor > 1) {
@@ -336,7 +336,7 @@ plotZoneSpatialContours = function(mtx, coords, zone_obj, resolution = 1, use_fo
   }
   breaks = seq(1, 3, length.out = 4)
   ggplot(coords) +
-    geom_point(data = coords, aes(x = x, y = y, color = zone), size=1) +
+    geom_point(data = coords, aes(x = x, y = y, color = zone), size = point_size) +
     scale_color_viridis_c(name = 'Zonation') +
     geom_contour(data = interp_df,
                 aes(x = x, y = y, z = z),
@@ -353,10 +353,11 @@ plotZoneSpatialContours = function(mtx, coords, zone_obj, resolution = 1, use_fo
 #' @param colname Name of custom column in `meta`
 #' @param zone_obj Calibrated Zonation Object
 #' @param resolution Optional numeric value for the resolution, where higher value results in a more granular interpolation (default 1)
+#' @param point_size Optional numeric value for the ggplot point size (default 1)
 #' @param use_for_inference (optional) A vector of sample names which should be used for zonation inference (recommended to use only hepatocytes, if annotation is available). If not provided, all samples will be used.
 #' @return A ggplot object
 #' @export
-plotZoneSpatialCustom = function(mtx, meta, col_name, zone_obj, resolution = 1, use_for_inference = NULL) {
+plotZoneSpatialCustom = function(mtx, meta, col_name, zone_obj, resolution = 1, point_size = 1, use_for_inference = NULL) {
   meta = data.frame(meta)
   scale_factor = zone_obj$scale_factor
   if (scale_factor > 1) {
@@ -387,7 +388,7 @@ plotZoneSpatialCustom = function(mtx, meta, col_name, zone_obj, resolution = 1, 
   }
   breaks = seq(1, 3, length.out = 4)
   ggplot(meta) +
-    geom_point(data = meta, aes(x = x, y = y, color = .data[[col_name]]), size=1) +
+    geom_point(data = meta, aes(x = x, y = y, color = .data[[col_name]]), size = point_size) +
     geom_contour(data = interp_df,
                 aes(x = x, y = y, z = z),
                 breaks = breaks,
