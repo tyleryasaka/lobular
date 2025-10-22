@@ -12,23 +12,13 @@ install.packages("devtools")
 devtools::install_github("tyleryasaka/lobular")
 ```
 
-## Loading
-
-```r
-library(lobular)
-```
-
 ## Usage
-
-1. Call `setBaseline(mtx, species)` with your gene expression matrix and desired species to calibrate the model and obtain a `ZonationObject`.
-
-2. Use the calibrated `ZonationObject` and your gene expression matrix as input to `getZone(mtx, zone_obj)` to obtain zonation assignments for each sample in your matrix.
-
-## Examples
 
 ### Obtaining zonation in Seurat v5
 
 ```r
+library(lobular)
+
 # Normalize to a baseline sample
 seurat_baseline <- subset(seurat_obj, subset = sample == 'my_baseline_sample_id')
 zonation_obj <- setBaseline(Seurat::GetAssayData(seurat_baseline, layer = 'data'), species='human')
