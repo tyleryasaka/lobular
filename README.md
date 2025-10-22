@@ -31,7 +31,7 @@ library(lobular)
 ```r
 # Normalize to a baseline sample
 seurat_baseline <- subset(seurat_obj, subset = sample == 'my_baseline_sample_id')
-zonation_obj <- setBaseline(Seurat::GetAssayData(seurat_baseline, layer = 'data'))
+zonation_obj <- setBaseline(Seurat::GetAssayData(seurat_baseline, layer = 'data'), species='human')
 
 # Obtain discrete zonation bins for entire dataset, normalized to the baseline
 zonation_assignments <- getZone(Seurat::GetAssayData(seurat_obj, layer = 'data'), zonation_obj)
