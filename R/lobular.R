@@ -135,14 +135,20 @@ setBaseline = function(mtx, coords = NULL, species = 'human') {
     hep_zonated = data.frame(read.csv(system.file('extdata', 'visium_human_regions.csv', package = 'lobular'), row.names = 1))
   } else if (species == 'mouse') {
     hep_zonated = read.csv(system.file('extdata', 'xu_naturegenetics_2024_hepatocyte_zonated_genes.csv', package = 'lobular'))
+    minMaxNorm = function(v) (v - min(v, na.rm = T)) / (max(v, na.rm = T) - min(v, na.rm = T))
+    monotonicity = function(v) abs(cor(1:length(v), v))
+    hep_zonated = hep_zonated[!is.na(hep_zonated$Gene),]
     layers = sapply(1:9, function(x) paste0('Layer.', x))
-    hep_zonated$zonation = apply(hep_zonated, 1, function(row) {
+    rownames(hep_zonated) = hep_zonated$Gene
+    hep_zonated = hep_zonated[,layers]
+    hep_zonated$skewness = apply(hep_zonated, 1, function(row) {
       vec = as.numeric(row[layers])
       vec = expanded_data = rep(1:length(vec), times = round(vec * 100))
       moments::skewness(vec)
     })
-    hep_zonated = hep_zonated[!is.na(hep_zonated$Gene),]
-    rownames(hep_zonated) = hep_zonated$Gene
+    hep_zonated$monotonicity = minMaxNorm(apply(hep_zonated[,1:9], 1, monotonicity))
+    hep_zonated$zonation = hep_zonated$monotonicity * sign(hep_zonated$skewness) + hep_zonated$skewness
+    hep_zonated
   } else {
     stop("Only 'human' and 'mouse' species are supported at the moment. (Specify with species = 'mouse'")
   }
