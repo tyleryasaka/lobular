@@ -10,7 +10,7 @@ ZONES = c('Zone_1', 'Zone_2', 'Zone_3')
 #'   \item{species}{Species used for analysis}
 #'   \item{factors}{Gene-level zonation factors}
 #' @export
-ZonationObject = function(baseline, species, factors, scale_factor) {
+ZonationObject = function(baseline, baseline_pv, baseline_cv, species, factors, factors_pv, factors_cv, scale_factor) {
   # Input validation
   if (!is.numeric(baseline)) {
     stop("baseline must be numeric")
@@ -28,8 +28,12 @@ ZonationObject = function(baseline, species, factors, scale_factor) {
   # Create the object
   obj = list(
     baseline = baseline,
+    baseline_pv = baseline_pv,
+    baseline_cv = baseline_cv,
     species = species,
     factors = factors,
+    factors_pv = factors_pv,
+    factors_cv = factors_cv,
     scale_factor = scale_factor
   )
 
@@ -156,6 +160,7 @@ setBaseline = function(mtx, coords = NULL, species = 'human') {
   hep_zonated = hep_zonated[rownames(hep_zonated) %in% rownames(mtx),]
   factors.zonated = hep_zonated$zonation
   names(factors.zonated) = rownames(hep_zonated)
+  factors.zonated.strong = factors.zonated
 
   scale_factor = 1
   if (!is.null(coords)) {
@@ -165,11 +170,19 @@ setBaseline = function(mtx, coords = NULL, species = 'human') {
     }
   }
 
+  facts.pv = abs(factors.zonated.strong[factors.zonated.strong < 0])
+  facts.cv = abs(factors.zonated.strong[factors.zonated.strong > 0])
   zonescore_raw = getGeneAvg(mtx, factors.zonated)
+  zonescore_raw.pv = getGeneAvg(mtx, facts.pv)
+  zonescore_raw.cv = getGeneAvg(mtx, facts.cv)
   zone_obj = ZonationObject(
     baseline = zonescore_raw,
+    baseline_pv = zonescore_raw.pv,
+    baseline_cv = zonescore_raw.cv,
     species = species,
     factors = factors.zonated,
+    factors_pv = facts.pv,
+    factors_cv = facts.cv,
     scale_factor = scale_factor
   )
   zone_obj
@@ -182,8 +195,11 @@ setBaseline = function(mtx, coords = NULL, species = 'human') {
 #' @return A vector of zonation assignments (discrete)
 #' @export
 getZone = function(mtx, zone_obj) {
-  new_vec = getGeneAvg(mtx, zone_obj$factors)
-  zonescore = apply_transformation(new_vec, zone_obj$baseline)
+  new_vec.pv = getGeneAvg(mtx, zone_obj$factors_pv)
+  new_vec.cv = getGeneAvg(mtx, zone_obj$factors_cv)
+  zone_continuous.pv = apply_transformation(new_vec.pv, zone_obj$baseline_pv)
+  zone_continuous.cv = apply_transformation(new_vec.cv, zone_obj$baseline_cv)
+  zonescore = (zone_continuous.cv + (1 - zone_continuous.pv)) / 2
   zone = ifelse(zonescore < (1 / 3), 'Zone_1', ifelse(zonescore < (2 / 3), 'Zone_2', 'Zone_3'))
   zone = factor(zone, levels = ZONES)
   names(zone) = colnames(mtx)
@@ -201,6 +217,64 @@ getZonationGradient = function(mtx, zone_obj) {
   zone_continuous = apply_transformation(new_vec, zone_obj$baseline)
   names(zone_continuous) = colnames(mtx)
   zone_continuous * 2 + 1
+}
+
+#' Apply the model to new samples, returning the 2d zonation per cell/spot
+#'
+#' @param mtx Gene expression matrix with genes as rows
+#' @param zone_obj Calibrated Zonation Object
+#' @return A dataframe with columns PV, CV, and zone
+#' @export
+getZonation2d = function(mtx, zone_obj) {
+  new_vec.pv = getGeneAvg(mtx, zone_obj$factors_pv)
+  new_vec.cv = getGeneAvg(mtx, zone_obj$factors_cv)
+  zone_continuous.pv = apply_transformation(new_vec.pv, zone_obj$baseline_pv)
+  zone_continuous.cv = apply_transformation(new_vec.cv, zone_obj$baseline_cv)
+  zonescore = (zone_continuous.cv + (1 - zone_continuous.pv)) / 2
+  zone = ifelse(zonescore < (1 / 3), 'Zone_1', ifelse(zonescore < (2 / 3), 'Zone_2', 'Zone_3'))
+  zone = factor(zone, levels = ZONES)
+  zone.2d = data.frame('PV' = zone_continuous.pv, 'CV' = zone_continuous.cv, 'zone' = zone)
+  rownames(zone.2d) = colnames(mtx)
+  zone.2d
+}
+
+#' Apply the model to new samples, returning a plot of the 2d zonation per cell/spot
+#'
+#' @param mtx Gene expression matrix with genes as rows
+#' @param zone_obj Calibrated Zonation Object
+#' @param point_size Optional numeric value for the ggplot point size (default 1)
+#' @return A ggplot object
+#' @export
+plotZonation2d = function(mtx, zone_obj, point_size = 1) {
+  zone.2d = getZonation2d(mtx, zone_obj)
+  ggplot(zone.2d) + geom_point(aes(PV, CV, color = zone), size = point_size) + coord_fixed() +
+    scale_x_continuous(expand = c(0,0)) +
+    scale_y_continuous(expand = c(0,0)) +
+    geom_abline(slope = 1, intercept = 1/3, color = '#D72000FF') +
+    geom_abline(slope = 1, intercept = -1/3, color = '#1BB6AFFF') +
+    scale_color_manual(values = c('#1BB6AFFF', '#FFAD0AFF', '#D72000FF')) +
+    labs(x = 'Portal Score', y = 'Central Score', color = 'Zone') +
+    theme_classic()
+}
+
+#' Apply the model to new samples, returning a density plot of the 2d zonation per cell/spot. For visualizing zonation polarity.
+#'
+#' @param mtx Gene expression matrix with genes as rows
+#' @param zone_obj Calibrated Zonation Object
+#' @return A ggplot object
+#' @export
+plotPolarity = function(mtx, zone_obj) {
+  zone.2d = getZonation2d(mtx, zone_obj)
+  polarity = -1 * cor(zone.2d$PV, zone.2d$CV)
+  ggplot(zone.2d) + geom_bin2d(aes(PV, CV), bins = 9, drop = FALSE) + scale_fill_viridis_c(option = 'magma') +
+    scale_x_continuous(expand = c(0,0)) +
+    scale_y_continuous(expand = c(0,0)) +
+    geom_abline(slope = 1, intercept = 1/3, color = '#fcfdbf') +
+    geom_abline(slope = 1, intercept = -1/3, color = '#fcfdbf') +
+    coord_fixed() +
+    labs(x = 'Portal Score', y = 'Central Score', fill = 'Count') +
+    annotate('text', x=0.5, y=0.5, label=round(polarity, 2), color='#fcfdbf', size = 8) +
+    theme_minimal()
 }
 
 #' Use this function to infer zonation of all cell types based on their spatial interpolation within the zonation gradient.
