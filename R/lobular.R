@@ -248,8 +248,8 @@ getZonation2d = function(mtx, zone_obj) {
 plotZonation2d = function(mtx, zone_obj, point_size = 1) {
   zone.2d = getZonation2d(mtx, zone_obj)
   ggplot(zone.2d) + geom_point(aes(PV, CV, color = zone), size = point_size) + coord_fixed() +
-    scale_x_continuous(expand = c(0,0)) +
-    scale_y_continuous(expand = c(0,0)) +
+    scale_x_continuous(limits = c(0, 1), expand = c(0,0)) +
+    scale_y_continuous(limits = c(0, 1), expand = c(0,0)) +
     geom_abline(slope = 1, intercept = 1/3, color = '#D72000FF') +
     geom_abline(slope = 1, intercept = -1/3, color = '#1BB6AFFF') +
     scale_color_manual(values = c('#1BB6AFFF', '#FFAD0AFF', '#D72000FF')) +
@@ -266,14 +266,30 @@ plotZonation2d = function(mtx, zone_obj, point_size = 1) {
 plotPolarity = function(mtx, zone_obj) {
   zone.2d = getZonation2d(mtx, zone_obj)
   polarity = -1 * cor(zone.2d$PV, zone.2d$CV)
-  ggplot(zone.2d) + geom_bin2d(aes(PV, CV), bins = 9, drop = FALSE) + scale_fill_viridis_c(option = 'magma') +
-    scale_x_continuous(expand = c(0,0)) +
-    scale_y_continuous(expand = c(0,0)) +
-    geom_abline(slope = 1, intercept = 1/3, color = '#fcfdbf') +
-    geom_abline(slope = 1, intercept = -1/3, color = '#fcfdbf') +
-    coord_fixed() +
+  bins = 9
+  brks = seq(0, 1, length.out = bins + 1)
+  xmids = head(brks, -1) + diff(brks)/2
+  ymids = xmids
+  grid_counts = zone.2d %>%
+    mutate(
+      xbin = cut(PV, brks, include.lowest = TRUE, right = FALSE, labels = FALSE),
+      ybin = cut(CV, brks, include.lowest = TRUE, right = FALSE, labels = FALSE),
+      xbin = factor(xbin, levels = 1:bins),
+      ybin = factor(ybin, levels = 1:bins)
+    ) %>%
+    count(xbin, ybin, .drop = FALSE) %>%
+    mutate(
+      x = xmids[as.integer(xbin)],
+      y = ymids[as.integer(ybin)]
+    )
+  ggplot(grid_counts, aes(x, y, fill = n)) +
+    geom_tile(width = 1/bins, height = 1/bins) +
+    scale_fill_viridis_c(option = 'magma') +
+    coord_fixed(xlim = c(0, 1), ylim = c(0, 1), expand = FALSE) +
     labs(x = 'Portal Score', y = 'Central Score', fill = 'Count') +
-    annotate('text', x=0.5, y=0.5, label=round(polarity, 2), color='#fcfdbf', size = 8) +
+    geom_abline(slope = -1 * polarity, intercept = 0.5 + polarity * 0.5, color = '#fcfdbf') +
+    geom_text(aes(x = 0.5, y = 0.5, label = round(polarity, 2)),
+                angle = atan(-1 * polarity) * 180 / pi, vjust = -1, color = '#fcfdbf', size = 8) +
     theme_minimal()
 }
 
