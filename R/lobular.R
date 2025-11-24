@@ -1,4 +1,5 @@
-ZONES = c('Zone_1', 'Zone_2', 'Zone_3')
+ZONES = c('Unzonated', 'Zone_1', 'Zone_2', 'Zone_3', 'Hyperzonated')
+minMaxNorm = function(v) (v - min(v, na.rm = T)) / (max(v, na.rm = T) - min(v, na.rm = T))
 
 #' Create a Zonation Object
 #'
@@ -129,7 +130,7 @@ apply_interpolation = function(mtx, coords, zone_obj, resolution = 1) {
 #' @param factor_threshold (Optional) Minimum value for zonation factors to be included in calculation (removes noise).
 #' @return A \code{ZonationObject} with calibrated baseline zonation
 #' @export
-setBaseline = function(mtx, coords = NULL, species = 'human', factor_threshold = 0.1) {
+setBaseline = function(mtx, coords = NULL, species = 'human', factor_threshold = 0) {
   if (species == 'human') {
     orig_annotation = hep_zonated = data.frame(read.csv(system.file('extdata', 'visium_human_zonation.csv', package = 'lobular'), row.names = 1))
   } else if (species == 'mouse') {
@@ -138,7 +139,6 @@ setBaseline = function(mtx, coords = NULL, species = 'human', factor_threshold =
     stop("Only 'human' and 'mouse' species are supported at the moment. (Specify with species = 'mouse'")
   }
 
-  minMaxNorm = function(v) (v - min(v, na.rm = T)) / (max(v, na.rm = T) - min(v, na.rm = T))
   getZoneObj = function(df) {
     factors.zonated.1 = df$zone_1
     factors.zonated.2 = df$zone_2
@@ -237,8 +237,14 @@ getZonationGradient = function(mtx, zone_obj) {
 #' @return A vector of zonation assignments (discrete)
 #' @export
 getZone = function(mtx, zone_obj) {
-  zonescore = getZonationGradient(mtx, zone_obj)
-  zone = ifelse(zonescore < 1 * (2 / 3) + 1, 'Zone_1', ifelse(zonescore < 2 * (2 / 3) + 1, 'Zone_2', 'Zone_3'))
+  new_vec.1 = getGeneAvg(mtx, zone_obj$factors_1)
+  new_vec.3 = getGeneAvg(mtx, zone_obj$factors_3)
+  zone_continuous.1 = apply_transformation(new_vec.1, zone_obj$baseline_1)
+  zone_continuous.3 = apply_transformation(new_vec.3, zone_obj$baseline_3)
+  zonescore = (zone_continuous.3 + (1 - zone_continuous.1)) / 2
+  zone = ifelse(zonescore < (1 / 3), 'Zone_1', ifelse(zonescore < (2 / 3), 'Zone_2', 'Zone_3'))
+  zone = ifelse(zone_continuous.1 + zone_continuous.3 < 0.3333, 'Unzonated', zone)
+  zone = ifelse(zone_continuous.1 + zone_continuous.3 > 1.6666, 'Hyperzonated', zone)
   zone = factor(zone, levels = ZONES)
   names(zone) = colnames(mtx)
   zone
@@ -263,6 +269,8 @@ getZonation2d = function(mtx, zone_obj) {
   }
   zonescore = (zone_continuous.3 + (1 - zone_continuous.1)) / 2
   zone = ifelse(zonescore < (1 / 3), 'Zone_1', ifelse(zonescore < (2 / 3), 'Zone_2', 'Zone_3'))
+  zone = ifelse(zone_continuous.1 + zone_continuous.3 < 0.3333, 'Unzonated', zone)
+  zone = ifelse(zone_continuous.1 + zone_continuous.3 > 1.6666, 'Hyperzonated', zone)
   zone = factor(zone, levels = ZONES)
   zone.2d = data.frame('ZONE_1' = zone_continuous.1, 'ZONE_2' = zone_continuous.2, 'ZONE_3' = zone_continuous.3, 'zone' = zone)
   rownames(zone.2d) = colnames(mtx)
@@ -283,9 +291,11 @@ plotZonation2d = function(mtx, zone_obj, point_size = 1) {
     scale_y_continuous(limits = c(0, 1), expand = c(0,0)) +
     geom_abline(slope = 1, intercept = 1/3, color = '#D72000FF') +
     geom_abline(slope = 1, intercept = -1/3, color = '#1BB6AFFF') +
-    scale_color_manual(values = c('#1BB6AFFF', '#FFAD0AFF', '#D72000FF')) +
+    geom_abline(slope = -1, intercept = 1/3, color = '#504880FF') +
+    geom_abline(slope = -1, intercept = 5/3, color = '#F080D8FF') +
+    scale_color_manual(values = c('#504880FF', '#1BB6AFFF', '#FFAD0AFF', '#D72000FF', '#F080D8FF'), limits = ZONES) +
     labs(x = 'Zone 1 Score', y = 'Zone 3 Score', color = 'Zone') +
-    ggdark::dark_theme_classic()
+    ggdark::dark_theme_grey()
 }
 
 #' Apply the model to new samples, returning a plot of the 2d zonation per cell/spot with *zone 2 score* indicated by the color. Only supported for mouse (no human zone 2 genes).
@@ -364,6 +374,64 @@ plotPolarity = function(mtx, zone_obj) {
     geom_text(aes(x = 0.5, y = 0.5, label = round(polarity, 2)),
                 angle = atan(-1 * polarity) * 180 / pi, vjust = -1, color = '#fcfdbf', size = 8) +
     ggdark::dark_theme_classic()
+}
+
+#' Generate a plot of the "diff" or breakdown of differential expression of zonated genes between 2 samples
+#'
+#' @param mtx Gene expression matrix with genes as rows
+#' @param zone Numeric, either 1, 2 (mouse only), or 3
+#' @param zone_obj Calibrated Zonation Object
+#' @param threshold Threshold of zonation for genes to include in plot
+#' @return A ggplot object
+#' @export
+plotZonationDiff = function(mtx_1, mtx_2, zone_obj, zone, threshold = 0.1) {
+  allowed_zones = c(1, 3)
+  if (zone_obj$species == 'mouse') {
+    allowed_zones = c(1, 2, 3)
+  }
+  if (!(zone %in% allowed_zones)) {
+    stop(paste0('For ', zone_obj$species, ', `zone` must be one of: ', paste(allowed_zones, collapse = ',')))
+  }
+  factors_zone = zone_obj[[paste0('factors_', zone)]]
+  factors_zone = factors_zone[factors_zone > threshold]
+  common_genes = intersect(names(factors_zone), rownames(mtx))
+  factors_zone = factors_zone[common_genes]
+  factors_zone = factors_zone[order(factors_zone, decreasing = T)]
+  mtx_filtered = mtx_2[common_genes,]
+  bl_filtered = mtx_1[common_genes,]
+  diff = Matrix::rowMeans(mtx_filtered) - Matrix::rowMeans(bl_filtered)
+  diff = diff[names(factors_zone)]
+  df = data.frame(id = seq_along(diff), name = names(diff), value = as.numeric(diff), weight = factors_zone)
+  gap = 0.05
+  df$xmin <- NA_real_
+  df$xmax <- NA_real_
+  df$xmin[1] <- 0
+  df$xmax[1] <- df$xmin[1] + df$weight[1]
+  if (nrow(df) > 1) {
+    for (i in 2:nrow(df)) {
+      df$xmin[i] <- df$xmax[i-1] + gap
+      df$xmax[i] <- df$xmin[i] + df$weight[i]
+    }
+  }
+  df$center <- (df$xmin + df$xmax)/2
+  df$name = factor(df$name, levels = df$name)
+  ggplot(df) +
+    geom_rect(aes(
+      xmin = xmin,
+      xmax = xmax,
+      ymin = pmin(0, value),
+      ymax = pmax(0, value),
+      fill = value > 0
+    )) +
+    geom_hline(yintercept = 0) +
+    scale_fill_manual(values = c("TRUE" = "#4daf4a", "FALSE" = "#e41a1c")) +
+    scale_x_continuous(
+      breaks = df$center,
+      labels = df$name
+    ) +
+    ggdark::dark_theme_classic() +
+    theme(legend.position = 'none', axis.text.x = element_text(angle = 45, hjust = 1)) +
+    labs(x = 'Gene', y = "Expression Change", title = paste0('Differential Zonation - Zone ', zone))
 }
 
 #' Use this function to infer zonation of all cell types based on their spatial interpolation within the zonation gradient.
