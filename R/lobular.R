@@ -1,4 +1,5 @@
 ZONES = c('Unzonated', 'Zone_1', 'Zone_2', 'Zone_3', 'Hyperzonated')
+ZONE_COLORS = c('#504880FF', '#1BB6AFFF', '#FFAD0AFF', '#D72000FF', '#F080D8FF')
 minMaxNorm = function(v) (v - min(v, na.rm = T)) / (max(v, na.rm = T) - min(v, na.rm = T))
 
 #' Create a Zonation Object
@@ -193,13 +194,15 @@ setBaseline = function(mtx, coords = NULL, species = 'human', factor_threshold =
   zone_obj_2 = getZoneObj(hep_zonated)
 
   getSimilarity = function(orig, curr, zone) {
+    common_genes = intersect(rownames(orig), rownames(curr))
+    orig = orig[common_genes,]
+    curr = curr[common_genes,]
     orig = orig[order(orig[[zone]], decreasing = T),]^2
     orig_genes = rownames(orig)[1:10]
-    curr_vals = curr[orig_genes, zone]
-    curr_vals = ifelse(is.na(curr_vals), 0, curr_vals)
-    print(paste0('This baseline is ', round(cor(orig[orig_genes, zone], curr_vals, method = 'pearson'), 2) * 100, '% similar to the reference (based on top 10 reference genes).'))
+    print(paste0('In zone ', zone, ', this baseline is ', round(cor(orig[orig_genes, zone], curr[orig_genes, zone], method = 'pearson'), 2) * 100, '% similar to the reference (based on top 10 overlapping genes).'))
   }
   getSimilarity(orig_annotation, hep_zonated, 'zone_1')
+  getSimilarity(orig_annotation, hep_zonated, 'zone_3')
 
   zone_obj_2
 }
@@ -293,7 +296,7 @@ plotZonation2d = function(mtx, zone_obj, point_size = 1) {
     geom_abline(slope = 1, intercept = -1/3, color = '#1BB6AFFF') +
     geom_abline(slope = -1, intercept = 1/3, color = '#504880FF') +
     geom_abline(slope = -1, intercept = 5/3, color = '#F080D8FF') +
-    scale_color_manual(values = c('#504880FF', '#1BB6AFFF', '#FFAD0AFF', '#D72000FF', '#F080D8FF'), limits = ZONES) +
+    scale_color_manual(values = ZONE_COLORS, limits = ZONES) +
     labs(x = 'Zone 1 Score', y = 'Zone 3 Score', color = 'Zone') +
     ggdark::dark_theme_grey()
 }
@@ -384,7 +387,7 @@ plotPolarity = function(mtx, zone_obj) {
 #' @param threshold Threshold of zonation for genes to include in plot
 #' @return A ggplot object
 #' @export
-plotZonationDiff = function(mtx_1, mtx_2, zone_obj, zone, threshold = 0.1) {
+plotZonationDiff = function(mtx_1, mtx_2, zone_obj, zone, threshold = 0.1, font_size = 9) {
   allowed_zones = c(1, 3)
   if (zone_obj$species == 'mouse') {
     allowed_zones = c(1, 2, 3)
@@ -394,7 +397,8 @@ plotZonationDiff = function(mtx_1, mtx_2, zone_obj, zone, threshold = 0.1) {
   }
   factors_zone = zone_obj[[paste0('factors_', zone)]]
   factors_zone = factors_zone[factors_zone > threshold]
-  common_genes = intersect(names(factors_zone), rownames(mtx))
+  common_genes = intersect(names(factors_zone), rownames(mtx_1))
+  common_genes = intersect(common_genes, rownames(mtx_2))
   factors_zone = factors_zone[common_genes]
   factors_zone = factors_zone[order(factors_zone, decreasing = T)]
   mtx_filtered = mtx_2[common_genes,]
@@ -430,7 +434,7 @@ plotZonationDiff = function(mtx_1, mtx_2, zone_obj, zone, threshold = 0.1) {
       labels = df$name
     ) +
     ggdark::dark_theme_classic() +
-    theme(legend.position = 'none', axis.text.x = element_text(angle = 45, hjust = 1)) +
+    theme(legend.position = 'none', axis.text.x = element_text(angle = 45, hjust = 1, size = font_size)) +
     labs(x = 'Gene', y = "Expression Change", title = paste0('Differential Zonation - Zone ', zone))
 }
 
