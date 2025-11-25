@@ -275,7 +275,7 @@ getZonation2d = function(mtx, zone_obj) {
   zone = ifelse(zone_continuous.1 + zone_continuous.3 < 0.3333, 'Unzonated', zone)
   zone = ifelse(zone_continuous.1 + zone_continuous.3 > 1.6666, 'Hyperzonated', zone)
   zone = factor(zone, levels = ZONES)
-  zone.2d = data.frame('ZONE_1' = zone_continuous.1, 'ZONE_2' = zone_continuous.2, 'ZONE_3' = zone_continuous.3, 'zone' = zone)
+  zone.2d = data.frame('ZONE_1' = zone_continuous.1, 'ZONE_2' = zone_continuous.2, 'ZONE_3' = zone_continuous.3, 'zone' = zone, 'zonation' = (zonescore * 2 + 1))
   rownames(zone.2d) = colnames(mtx)
   zone.2d
 }
@@ -320,6 +320,42 @@ plotZonation2d_2 = function(mtx, zone_obj, point_size = 1) {
     geom_abline(slope = 1, intercept = -1/3, color = '#FFFFFF') +
     scale_color_viridis_c() +
     labs(x = 'Zone 1 Score', y = 'Zone 3 Score', color = 'Zone 2 Score') +
+    ggdark::dark_theme_classic()
+}
+
+#' Apply the model to new samples, returning a plot of the 2d zonation per cell/spot with *expression of a specific gene* indicated by the color
+#'
+#' @param mtx Gene expression matrix with genes as rows
+#' @param zone_obj Calibrated Zonation Object
+#' @param gene Name of gene to plot
+#' @param point_size Optional numeric value for the ggplot point size (default 1)
+#' @return A ggplot object
+#' @export
+plotZonation2dGene = function(mtx, zone_obj, gene, point_size = 1) {
+  zone.2d = getZonation2d(mtx, zone_obj)
+  zone.2d[,gene] = mtx[gene,]
+  ggplot(zone.2d) + geom_point(aes(ZONE_1, ZONE_3, color = .data[[gene]]), size = point_size) + coord_fixed() +
+    scale_x_continuous(limits = c(0, 1), expand = c(0,0)) +
+    scale_y_continuous(limits = c(0, 1), expand = c(0,0)) +
+    scale_color_viridis_c() +
+    labs(x = 'Zone 1 Score', y = 'Zone 3 Score', color = gene) +
+    ggdark::dark_theme_grey()
+}
+
+#' Apply the model to new samples, returning a ridge plot of gene expression along zonation axis
+#'
+#' @param mtx Gene expression matrix with genes as rows
+#' @param zone_obj Calibrated Zonation Object
+#' @param gene Name of gene to plot
+#' @return A ggplot object
+#' @export
+plotGeneZonation = function(mtx, zone_obj, gene) {
+  zone.2d = getZonation2d(mtx, zone_obj)
+  zone.2d[,gene] = mtx[gene,]
+  ggplot(zone.2d, aes(x = zonation, y = .data[[gene]])) +
+    geom_point(color = '#504880FF') +
+    geom_smooth(method = "lm", formula = y ~ poly(x, 3), se = TRUE, color = "#F080D8FF", fill  = "#C8C0F8FF") +
+    xlab('Zonation') +
     ggdark::dark_theme_classic()
 }
 
