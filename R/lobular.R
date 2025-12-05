@@ -187,6 +187,9 @@ setBaseline = function(mtx, coords = NULL, species = 'human', factor_threshold =
   zone2_grad = ifelse(zone2_grad < 0.5, zone2_grad * 2, (1 - zone2_grad) * 2)
   cor_zone2_grad = apply(mtx, 1, function(row) cor(zone2_grad, row))
   cor_grad = apply(mtx, 1, function(row) cor(grad, row))
+  cor_grad_p = apply(mtx, 1, function(row) cor.test(grad, row, method = 'pearson', use = 'pairwise.complete.obs')$p.value)
+  cor_grad_p = p.adjust(cor_grad_p)
+  cor_grad = ifelse(cor_grad_p < 0.05, cor_grad, 0)
   cor_grad_1 = ifelse(cor_grad < 0, abs(cor_grad), 0)
   cor_grad_2 = ifelse(cor_zone2_grad > 0, cor_zone2_grad, 0)
   cor_grad_3 = ifelse(cor_grad > 0, cor_grad, 0)
@@ -198,8 +201,8 @@ setBaseline = function(mtx, coords = NULL, species = 'human', factor_threshold =
     orig = orig[common_genes,]
     curr = curr[common_genes,]
     orig = orig[order(orig[[zone]], decreasing = T),]^2
-    orig_genes = rownames(orig)[1:10]
-    print(paste0('In zone ', zone, ', this baseline is ', round(cor(orig[orig_genes, zone], curr[orig_genes, zone], method = 'pearson'), 2) * 100, '% similar to the reference (based on top 10 overlapping genes).'))
+    orig_genes = rownames(orig)[1:100]
+    print(paste0('In zone ', zone, ', this baseline is ', round(cor(orig[orig_genes, zone], curr[orig_genes, zone], method = 'pearson'), 2) * 100, '% similar to the reference (based on top 100 overlapping genes).'))
   }
   getSimilarity(orig_annotation, hep_zonated, 'zone_1')
   getSimilarity(orig_annotation, hep_zonated, 'zone_3')
@@ -349,7 +352,7 @@ plotZonation2dGene = function(mtx, zone_obj, gene, point_size = 1) {
 #' @param gene Name of gene to plot
 #' @return A ggplot object
 #' @export
-plotGeneZonation = function(mtx, zone_obj, gene) {
+plotRegression = function(mtx, zone_obj, gene) {
   zone.2d = getZonation2d(mtx, zone_obj)
   zone.2d[,gene] = mtx[gene,]
   ggplot(zone.2d, aes(x = zonation, y = .data[[gene]])) +
