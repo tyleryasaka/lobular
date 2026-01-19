@@ -2,6 +2,12 @@ ZONES = c('Unzonated', 'Zone_1', 'Zone_2', 'Zone_3', 'Hyperzonated')
 ZONE_COLORS = c('#504880FF', '#1BB6AFFF', '#FFAD0AFF', '#D72000FF', '#F080D8FF')
 minMaxNorm = function(v) (v - min(v, na.rm = T)) / (max(v, na.rm = T) - min(v, na.rm = T))
 
+normalizeMatrix = function(mtx) {
+  mtx = t(scale(t(as.matrix(mtx)), center = FALSE))
+  mtx[is.na(mtx)] = 0
+  mtx
+}
+
 #' Create a Zonation Object
 #'
 #' @param baseline Numeric vector of baseline zonation scores
@@ -101,11 +107,12 @@ getGeneAvg = function(mtx, gene_weights) {
 #' @param original_values Vector of original values
 #' @return The transformed new vector
 #' @noRd
-apply_transformation = function(new_values, original_values) {
-  unique_orig = sort(unique(original_values))
-  n = length(unique_orig)
-  ranks = (seq_along(unique_orig) - 1) / (n - 1)
-  approx(unique_orig, ranks, xout = new_values, rule = 2)$y
+apply_transformation = function(new_values, original_values, p = 0) {
+  lims = quantile(original_values, c(p, 1 - p))
+  orig = pmax(pmin(original_values, lims[2]), lims[1])
+  u = sort(unique(orig))
+  n = length(u)
+  approx(u, (seq_along(u) - 1) / max(1, n - 1), xout = new_values, rule = 2)$y
 }
 
 #' Obtain an interpolation data frame
@@ -117,7 +124,7 @@ apply_transformation = function(new_values, original_values) {
 #' @return An interpolation data frame
 #' @noRd
 apply_interpolation = function(mtx, coords, zone_obj, resolution = 1) {
-  coords$zonation = getZonationGradient(mtx, zone_obj)
+  coords$zonation = getZonationGradient_help(mtx, zone_obj)
   nx = abs((range(coords$x)[[1]] - range(coords$x)[[2]]) / 300 * resolution)
   ny = abs((range(coords$y)[[1]] - range(coords$y)[[2]]) / 300 * resolution)
   with(coords, akima::interp(x, y, zonation, duplicate = "mean", linear = TRUE, extrap = FALSE, nx = nx, ny = ny))
@@ -139,6 +146,7 @@ setBaseline = function(mtx, coords = NULL, species = 'human', factor_threshold =
   } else {
     stop("Only 'human' and 'mouse' species are supported at the moment. (Specify with species = 'mouse'")
   }
+  mtx = normalizeMatrix(mtx)
 
   getZoneObj = function(df) {
     factors.zonated.1 = df$zone_1
@@ -181,7 +189,7 @@ setBaseline = function(mtx, coords = NULL, species = 'human', factor_threshold =
   hep_zonated = hep_zonated[rownames(hep_zonated) %in% rownames(mtx),]
   zone_obj = getZoneObj(hep_zonated)
 
-  grad = getZonationGradient(mtx, zone_obj)
+  grad = getZonationGradient_help(mtx, zone_obj)
   grad = grad[colnames(mtx)]
   zone2_grad = minMaxNorm(grad)
   zone2_grad = ifelse(zone2_grad < 0.5, zone2_grad * 2, (1 - zone2_grad) * 2)
@@ -220,13 +228,7 @@ getGeneZonation = function(zone_obj) {
   sqrt(data.frame(zone_1 = zone_obj$factors_1, zone_2 = zone_obj$factors_2, zone_3 = zone_obj$factors_3))
 }
 
-#' Apply the model to new samples, returning the zonation per cell/spot as a gradient between 1 and 3
-#'
-#' @param mtx Gene expression matrix with genes as rows
-#' @param zone_obj Calibrated Zonation Object
-#' @return A vector of numeric zonation assignments (continuous)
-#' @export
-getZonationGradient = function(mtx, zone_obj) {
+getZonationGradient_help = function(mtx, zone_obj) {
   new_vec.1 = getGeneAvg(mtx, zone_obj$factors_1)
   new_vec.3 = getGeneAvg(mtx, zone_obj$factors_3)
   zone_continuous.1 = apply_transformation(new_vec.1, zone_obj$baseline_1)
@@ -236,6 +238,17 @@ getZonationGradient = function(mtx, zone_obj) {
   zonescore * 2 + 1
 }
 
+#' Apply the model to new samples, returning the zonation per cell/spot as a gradient between 1 and 3
+#'
+#' @param mtx Gene expression matrix with genes as rows
+#' @param zone_obj Calibrated Zonation Object
+#' @return A vector of numeric zonation assignments (continuous)
+#' @export
+getZonationGradient = function(mtx, zone_obj) {
+  mtx = normalizeMatrix(mtx)
+  getZonationGradient_help(mtx, zone_obj)
+}
+
 #' Apply the model to new samples, returning the zonation per cell/spot as discrete bins (1, 2, or 3)
 #'
 #' @param mtx Gene expression matrix with genes as rows
@@ -243,6 +256,7 @@ getZonationGradient = function(mtx, zone_obj) {
 #' @return A vector of zonation assignments (discrete)
 #' @export
 getZone = function(mtx, zone_obj) {
+  mtx = normalizeMatrix(mtx)
   new_vec.1 = getGeneAvg(mtx, zone_obj$factors_1)
   new_vec.3 = getGeneAvg(mtx, zone_obj$factors_3)
   zone_continuous.1 = apply_transformation(new_vec.1, zone_obj$baseline_1)
@@ -256,13 +270,7 @@ getZone = function(mtx, zone_obj) {
   zone
 }
 
-#' Apply the model to new samples, returning the 2d zonation per cell/spot
-#'
-#' @param mtx Gene expression matrix with genes as rows
-#' @param zone_obj Calibrated Zonation Object
-#' @return A dataframe with columns PV, CV, and zone
-#' @export
-getZonation2d = function(mtx, zone_obj) {
+getZonation2d_help = function(mtx, zone_obj) {
   new_vec.1 = getGeneAvg(mtx, zone_obj$factors_1)
   new_vec.3 = getGeneAvg(mtx, zone_obj$factors_3)
   zone_continuous.1 = apply_transformation(new_vec.1, zone_obj$baseline_1)
@@ -283,6 +291,17 @@ getZonation2d = function(mtx, zone_obj) {
   zone.2d
 }
 
+#' Apply the model to new samples, returning the 2d zonation per cell/spot
+#'
+#' @param mtx Gene expression matrix with genes as rows
+#' @param zone_obj Calibrated Zonation Object
+#' @return A dataframe with columns PV, CV, and zone
+#' @export
+getZonation2d = function(mtx, zone_obj) {
+  mtx = normalizeMatrix(mtx)
+  getZonation2d_help(mtx, zone_obj)
+}
+
 #' Apply the model to new samples, returning a plot of the 2d zonation per cell/spot with *zone* indicated by the color
 #'
 #' @param mtx Gene expression matrix with genes as rows
@@ -291,7 +310,8 @@ getZonation2d = function(mtx, zone_obj) {
 #' @return A ggplot object
 #' @export
 plotZonation2d = function(mtx, zone_obj, point_size = 1) {
-  zone.2d = getZonation2d(mtx, zone_obj)
+  mtx = normalizeMatrix(mtx)
+  zone.2d = getZonation2d_help(mtx, zone_obj)
   ggplot(zone.2d) + geom_point(aes(ZONE_1, ZONE_3, color = zone), size = point_size) + coord_fixed() +
     scale_x_continuous(limits = c(0, 1), expand = c(0,0)) +
     scale_y_continuous(limits = c(0, 1), expand = c(0,0)) +
@@ -315,7 +335,8 @@ plotZonation2d_2 = function(mtx, zone_obj, point_size = 1) {
   if (zone_obj$species != 'mouse') {
     stop(paste0("This plot is not available for ", zone_obj$species, ", as there are no zone 2 reference genes."))
   }
-  zone.2d = getZonation2d(mtx, zone_obj)
+  mtx = normalizeMatrix(mtx)
+  zone.2d = getZonation2d_help(mtx, zone_obj)
   ggplot(zone.2d) + geom_point(aes(ZONE_1, ZONE_3, color = ZONE_2), size = point_size) + coord_fixed() +
     scale_x_continuous(limits = c(0, 1), expand = c(0,0)) +
     scale_y_continuous(limits = c(0, 1), expand = c(0,0)) +
@@ -335,7 +356,8 @@ plotZonation2d_2 = function(mtx, zone_obj, point_size = 1) {
 #' @return A ggplot object
 #' @export
 plotZonation2dGene = function(mtx, zone_obj, gene, point_size = 1) {
-  zone.2d = getZonation2d(mtx, zone_obj)
+  mtx = normalizeMatrix(mtx)
+  zone.2d = getZonation2d_help(mtx, zone_obj)
   zone.2d[,gene] = mtx[gene,]
   ggplot(zone.2d) + geom_point(aes(ZONE_1, ZONE_3, color = .data[[gene]]), size = point_size) + coord_fixed() +
     scale_x_continuous(limits = c(0, 1), expand = c(0,0)) +
@@ -353,7 +375,8 @@ plotZonation2dGene = function(mtx, zone_obj, gene, point_size = 1) {
 #' @return A ggplot object
 #' @export
 plotRegression = function(mtx, zone_obj, gene) {
-  zone.2d = getZonation2d(mtx, zone_obj)
+  mtx = normalizeMatrix(mtx)
+  zone.2d = getZonation2d_help(mtx, zone_obj)
   zone.2d[,gene] = mtx[gene,]
   ggplot(zone.2d, aes(x = zonation, y = .data[[gene]])) +
     geom_point(color = '#504880FF') +
@@ -369,7 +392,8 @@ plotRegression = function(mtx, zone_obj, gene) {
 #' @return A ggplot object
 #' @export
 plotZonationRidge = function(mtx, zone_obj) {
-  zone.2d = getZonation2d(mtx, zone_obj)
+  mtx = normalizeMatrix(mtx)
+  zone.2d = getZonation2d_help(mtx, zone_obj)
   zone.2d.long <- zone.2d[,1:3] %>%
     tidyr::pivot_longer(cols = c(ZONE_1, ZONE_2, ZONE_3),
                   names_to = 'Zone',
@@ -389,7 +413,8 @@ plotZonationRidge = function(mtx, zone_obj) {
 #' @return A ggplot object
 #' @export
 plotPolarity = function(mtx, zone_obj) {
-  zone.2d = getZonation2d(mtx, zone_obj)
+  mtx = normalizeMatrix(mtx)
+  zone.2d = getZonation2d_help(mtx, zone_obj)
   polarity = -1 * cor(zone.2d$ZONE_1, zone.2d$ZONE_3)
   bins = 9
   brks = seq(0, 1, length.out = bins + 1)
@@ -427,6 +452,8 @@ plotPolarity = function(mtx, zone_obj) {
 #' @return A ggplot object
 #' @export
 plotZonationDiff = function(mtx_1, mtx_2, zone_obj, zone, threshold = 0.1, font_size = 9) {
+  mtx_1 = normalizeMatrix(mtx_1)
+  mtx_2 = normalizeMatrix(mtx_2)
   allowed_zones = c(1, 3)
   if (zone_obj$species == 'mouse') {
     allowed_zones = c(1, 2, 3)
@@ -490,6 +517,7 @@ plotZonationDiff = function(mtx_1, mtx_2, zone_obj, zone, threshold = 0.1, font_
 #' @return A vector of zonation assignments (discrete) for all samples
 #' @export
 getZoneSpatial = function(mtx, coords, zone_obj, resolution = 1, use_for_inference = NULL) {
+  mtx = normalizeMatrix(mtx)
   coords = data.frame(coords)
   scale_factor = zone_obj$scale_factor
   if (scale_factor > 1) {
@@ -525,7 +553,7 @@ getZoneSpatial = function(mtx, coords, zone_obj, resolution = 1, use_for_inferen
   }, ix, iy, coords$x, coords$y)
   coords$zonation = interp_value
   breaks = seq(1, 3, length.out = 4)
-  zone = cut(coords$zonation, breaks = breaks, labels = ZONES, include.lowest = TRUE)
+  zone = cut(coords$zonation, breaks = breaks, labels = c('Zone_1', 'Zone_2', 'Zone_3'), include.lowest = TRUE)
   zone = factor(zone, levels = ZONES)
   names(zone) = rownames(coords)
   zone
@@ -541,6 +569,7 @@ getZoneSpatial = function(mtx, coords, zone_obj, resolution = 1, use_for_inferen
 #' @return A ggplot object
 #' @export
 plotZoneSpatial = function(mtx, coords, zone_obj, resolution = 1, use_for_inference = NULL) {
+  mtx = normalizeMatrix(mtx)
   coords = data.frame(coords)
   scale_factor = zone_obj$scale_factor
   if (scale_factor > 1) {
@@ -585,6 +614,7 @@ plotZoneSpatial = function(mtx, coords, zone_obj, resolution = 1, use_for_infere
 #' @return A ggplot object
 #' @export
 plotZoneSpatialContours = function(mtx, coords, zone_obj, resolution = 1, point_size = 1, line_width = 2, plot_options = NULL, use_for_inference = NULL) {
+  mtx = normalizeMatrix(mtx)
   coords = data.frame(coords)
   scale_factor = zone_obj$scale_factor
   if (scale_factor > 1) {
@@ -640,6 +670,7 @@ plotZoneSpatialContours = function(mtx, coords, zone_obj, resolution = 1, point_
 #' @return A ggplot object
 #' @export
 plotZoneSpatialCustom = function(mtx, meta, col_name, zone_obj, resolution = 1, point_size = 1, use_for_inference = NULL) {
+  mtx = normalizeMatrix(mtx)
   meta = data.frame(meta)
   scale_factor = zone_obj$scale_factor
   if (scale_factor > 1) {

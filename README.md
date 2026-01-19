@@ -44,7 +44,7 @@ setBaseline(mtx, species = 'human')
 ```
 
 **Arguments:**
-- `mtx`: Gene expression matrix with genes as rows.
+- `mtx`: Gene expression matrix (*log-normalized*) with genes as rows.
 - `coords`: (Optional) For spatial data, calibrates to the dimensions of the baseline sample. Coordinate matrix with samples as rows, and columns `x` and `y`.
 - `species`: (Optional) Species to use; defaults to `'human'`. Supports `'mouse'` and `'human'`.
 
@@ -63,7 +63,7 @@ getZone(mtx, zone_obj)
 ```
 
 **Arguments:**
-- `mtx`: Gene expression matrix with genes as rows.
+- `mtx`: Gene expression matrix (*log-normalized*) with genes as rows.
 - `zone_obj`: Calibrated `ZonationObject`.
 
 **Returns:**
@@ -81,7 +81,7 @@ getZonationGradient(mtx, zone_obj)
 ```
 
 **Arguments:**
-- `mtx`: Gene expression matrix with genes as rows.
+- `mtx`: Gene expression matrix (*log-normalized*) with genes as rows.
 - `zone_obj`: Calibrated `ZonationObject`.
 
 **Returns:**
@@ -99,7 +99,7 @@ getZoneSpatial(mtx, coords, zone_obj, use_for_inference = NULL)
 ```
 
 **Arguments:**
-- `mtx`: Gene expression matrix with genes as rows.
+- `mtx`: Gene expression matrix (*log-normalized*) with genes as rows.
 - `coords`: Coordinate matrix with columns `x` and `y`; rownames match `mtx` colnames.
 - `zone_obj`: Calibrated `ZonationObject`.
 - `resolution`: Optional numeric value for the resolution, where higher value results in a more granular interpolation (default 1)
@@ -120,7 +120,7 @@ plotZoneSpatial(mtx, coords, zone_obj, use_for_inference = NULL)
 ```
 
 **Arguments:**
-- `mtx`: Gene expression matrix with genes as rows.
+- `mtx`: Gene expression matrix (*log-normalized*) with genes as rows.
 - `coords`: Coordinate matrix with columns `x` and `y`.
 - `zone_obj`: Calibrated `ZonationObject`.
 - `resolution`: Optional numeric value for the resolution, where higher value results in a more granular interpolation (default 1)
@@ -141,7 +141,7 @@ plotZoneSpatialContours(mtx, coords, zone_obj, use_for_inference = NULL)
 ```
 
 **Arguments:**
-- `mtx`: Gene expression matrix with genes as rows.
+- `mtx`: Gene expression matrix (*log-normalized*) with genes as rows.
 - `coords`: Coordinate matrix with columns `x` and `y`.
 - `zone_obj`: Calibrated `ZonationObject`.
 - `resolution`: Optional numeric value for the resolution, where higher value results in a more granular interpolation (default 1)
@@ -163,7 +163,7 @@ plotZoneSpatialCustom(mtx, meta, zone_obj, use_for_inference = NULL)
 ```
 
 **Arguments:**
-- `mtx`: Gene expression matrix with genes as rows.
+- `mtx`: Gene expression matrix (*log-normalized*) with genes as rows.
 - `meta`: Metadata matrix with samples as rows, and columns `x`, `y`, and `mycolname`, where `mycolname` is passed as `colname`. Rownames of coords should match colnames of mtx.
 - `colname`: Name of custom column in `meta`
 - `zone_obj`: Calibrated `ZonationObject`.
