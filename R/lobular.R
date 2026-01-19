@@ -210,7 +210,6 @@ setBaseline = function(mtx, coords = NULL, species = 'human', factor_threshold =
     curr = curr[common_genes,]
     orig = orig[order(orig[[zone]], decreasing = T),]^2
     orig_genes = rownames(orig)[1:100]
-    print(paste0('In zone ', zone, ', this baseline is ', round(cor(orig[orig_genes, zone], curr[orig_genes, zone], method = 'pearson'), 2) * 100, '% similar to the reference (based on top 100 overlapping genes).'))
   }
   getSimilarity(orig_annotation, hep_zonated, 'zone_1')
   getSimilarity(orig_annotation, hep_zonated, 'zone_3')
