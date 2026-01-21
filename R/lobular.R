@@ -3,9 +3,7 @@ ZONE_COLORS = c('#504880FF', '#1BB6AFFF', '#FFAD0AFF', '#D72000FF', '#F080D8FF')
 minMaxNorm = function(v) (v - min(v, na.rm = T)) / (max(v, na.rm = T) - min(v, na.rm = T))
 
 normalizeMatrix = function(mtx) {
-  mtx = t(scale(t(as.matrix(mtx)), center = FALSE))
-  mtx[is.na(mtx)] = 0
-  mtx
+  as.matrix(mtx) # no normalization (user should pass in log-transformed matrix)
 }
 
 #' Create a Zonation Object
@@ -146,7 +144,10 @@ setBaseline = function(mtx, coords = NULL, species = 'human', factor_threshold =
   } else {
     stop("Only 'human' and 'mouse' species are supported at the moment. (Specify with species = 'mouse'")
   }
-  mtx = normalizeMatrix(mtx)
+  mtx = as.matrix(mtx)
+  gene_vars = data.frame(read.csv(system.file('extdata', 'gene_variability.csv', package = 'lobular'), row.names = 1))
+  gene_vars = setNames(gene_vars[,1], rownames(gene_vars))
+  low_var_genes = names(gene_vars[gene_vars < quantile(gene_vars, 0.1)])
 
   getZoneObj = function(df) {
     factors.zonated.1 = df$zone_1
@@ -187,21 +188,39 @@ setBaseline = function(mtx, coords = NULL, species = 'human', factor_threshold =
   }
 
   hep_zonated = hep_zonated[rownames(hep_zonated) %in% rownames(mtx),]
-  zone_obj = getZoneObj(hep_zonated)
+  reps = 0
+  prev_grad = NULL
+  reps_limit = 10 # TODO automatic stopping
+  while(reps < reps_limit) {
+    zone_obj = getZoneObj(hep_zonated)
 
-  grad = getZonationGradient_help(mtx, zone_obj)
-  grad = grad[colnames(mtx)]
-  zone2_grad = minMaxNorm(grad)
-  zone2_grad = ifelse(zone2_grad < 0.5, zone2_grad * 2, (1 - zone2_grad) * 2)
-  cor_zone2_grad = apply(mtx, 1, function(row) cor(zone2_grad, row))
-  cor_grad = apply(mtx, 1, function(row) cor(grad, row))
-  cor_grad_p = apply(mtx, 1, function(row) cor.test(grad, row, method = 'pearson', use = 'pairwise.complete.obs')$p.value)
-  cor_grad_p = p.adjust(cor_grad_p)
-  cor_grad = ifelse(cor_grad_p < 0.05, cor_grad, 0)
-  cor_grad_1 = ifelse(cor_grad < 0, abs(cor_grad), 0)
-  cor_grad_2 = ifelse(cor_zone2_grad > 0, cor_zone2_grad, 0)
-  cor_grad_3 = ifelse(cor_grad > 0, cor_grad, 0)
-  hep_zonated = data.frame(zone_1 = cor_grad_1, zone_2 = cor_grad_2, zone_3 = cor_grad_3)
+    hep_zonated_nonzero = hep_zonated[rowSums(hep_zonated != 0 & !is.na(hep_zonated)) > 0, ]
+    if (reps == reps_limit - 1) {
+      mtx_grad = mtx
+    } else {
+      mtx_grad = mtx[rownames(mtx) %in% rownames(hep_zonated_nonzero),]
+      mtx_grad = mtx_grad[rownames(mtx_grad) %in% low_var_genes,]
+    }
+    grad = getZonationGradient_help(mtx, zone_obj)
+    grad = grad[colnames(mtx)]
+    if (!is.null(prev_grad)) {
+      prev_grad = grad
+    } else {
+      prev_grad = grad
+    }
+    zone2_grad = minMaxNorm(grad)
+    zone2_grad = ifelse(zone2_grad < 0.5, zone2_grad * 2, (1 - zone2_grad) * 2)
+    cor_zone2_grad = apply(mtx_grad, 1, function(row) cor(zone2_grad, row))
+    cor_grad = apply(mtx_grad, 1, function(row) cor(grad, row))
+    cor_grad_p = apply(mtx_grad, 1, function(row) cor.test(grad, row, method = 'pearson', use = 'pairwise.complete.obs')$p.value)
+    cor_grad_p = p.adjust(cor_grad_p)
+    cor_grad = ifelse(cor_grad_p < 0.05, cor_grad, 0)
+    cor_grad_1 = ifelse(cor_grad < 0, abs(cor_grad), 0)
+    cor_grad_2 = ifelse(cor_zone2_grad > 0, cor_zone2_grad, 0)
+    cor_grad_3 = ifelse(cor_grad > 0, cor_grad, 0)
+    hep_zonated = data.frame(zone_1 = cor_grad_1, zone_2 = cor_grad_2, zone_3 = cor_grad_3)
+    reps = reps + 1
+  }
   zone_obj_2 = getZoneObj(hep_zonated)
 
   getSimilarity = function(orig, curr, zone) {
