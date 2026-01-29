@@ -139,13 +139,15 @@ apply_interpolation = function(mtx, coords, zone_obj, resolution = 1) {
 setBaseline = function(mtx, coords = NULL, species = 'human', factor_threshold = 0) {
   if (species == 'human') {
     orig_annotation = hep_zonated = data.frame(read.csv(system.file('extdata', 'visium_human_zonation.csv', package = 'lobular'), row.names = 1))
+    gene_vars = data.frame(read.csv(system.file('extdata', 'gene_variability_human.csv', package = 'lobular'), row.names = 1))
   } else if (species == 'mouse') {
     orig_annotation = hep_zonated = data.frame(read.csv(system.file('extdata', 'visium_mouse_zonation.csv', package = 'lobular'), row.names = 1))
+    gene_vars = data.frame(read.csv(system.file('extdata', 'gene_variability_mouse.csv', package = 'lobular'), row.names = 1))
   } else {
     stop("Only 'human' and 'mouse' species are supported at the moment. (Specify with species = 'mouse'")
   }
   mtx = as.matrix(mtx)
-  gene_vars = data.frame(read.csv(system.file('extdata', 'gene_variability.csv', package = 'lobular'), row.names = 1))
+
   gene_vars = setNames(gene_vars[,1], rownames(gene_vars))
   low_var_genes = names(gene_vars[gene_vars < quantile(gene_vars, 0.1)])
 
@@ -221,19 +223,7 @@ setBaseline = function(mtx, coords = NULL, species = 'human', factor_threshold =
     hep_zonated = data.frame(zone_1 = cor_grad_1, zone_2 = cor_grad_2, zone_3 = cor_grad_3)
     reps = reps + 1
   }
-  zone_obj_2 = getZoneObj(hep_zonated)
-
-  getSimilarity = function(orig, curr, zone) {
-    common_genes = intersect(rownames(orig), rownames(curr))
-    orig = orig[common_genes,]
-    curr = curr[common_genes,]
-    orig = orig[order(orig[[zone]], decreasing = T),]^2
-    orig_genes = rownames(orig)[1:100]
-  }
-  getSimilarity(orig_annotation, hep_zonated, 'zone_1')
-  getSimilarity(orig_annotation, hep_zonated, 'zone_3')
-
-  zone_obj_2
+  getZoneObj(hep_zonated)
 }
 
 #' Get the pearson correlations between zone scores and genes
