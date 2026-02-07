@@ -2,7 +2,7 @@ ZONES = c('Zone_1', 'Zone_2', 'Zone_3')
 ZONE_COLORS = c('#504880FF', '#1BB6AFFF', '#FFAD0AFF', '#D72000FF', '#F080D8FF')
 minMaxNorm = function(v) (v - min(v, na.rm = T)) / (max(v, na.rm = T) - min(v, na.rm = T))
 
-em_zonation = function(mtx, init_w, iterations = 10) {
+em_zonation = function(mtx, init_w, iterations, density_cut, min_cor, mix_rate) {
   mtx = t(mtx)
   g_m = colMeans(mtx)
   mtx = scale(mtx, center = g_m, scale = FALSE)
@@ -250,7 +250,7 @@ setBaseline = function(mtx, coords = NULL, species = 'human', density_cut = 0, m
       0
     }
   })
-  em_zonation(mtx, initial_weights, density_cut = density_cut, min_cor = min_cor, mix_rate = mix_rate)
+  em_zonation(mtx, initial_weights, iterations = 10, density_cut = density_cut, min_cor = min_cor, mix_rate = mix_rate)
 }
 
 #' Get the pearson correlations between zone scores and genes
