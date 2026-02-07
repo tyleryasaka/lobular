@@ -128,6 +128,16 @@ apply_interpolation = function(mtx, coords, zone_obj, resolution = 1) {
   with(coords, akima::interp(x, y, zonation, duplicate = "mean", linear = TRUE, extrap = FALSE, nx = nx, ny = ny))
 }
 
+getZonationGradient_help = function(mtx, zone_obj) {
+  new_vec.1 = getGeneAvg(mtx, zone_obj$factors_1)
+  new_vec.3 = getGeneAvg(mtx, zone_obj$factors_3)
+  zone_continuous.1 = apply_transformation(new_vec.1, zone_obj$baseline_1)
+  zone_continuous.3 = apply_transformation(new_vec.3, zone_obj$baseline_3)
+  zonescore = (zone_continuous.3 + (1 - zone_continuous.1)) / 2
+  names(zonescore) = colnames(mtx)
+  zonescore * 2 + 1
+}
+
 #' Calibrate the model to baseline liver zonation
 #'
 #' @param mtx Gene expression matrix with genes as rows
@@ -191,7 +201,6 @@ setBaseline = function(mtx, coords = NULL, species = 'human', factor_threshold =
 
   hep_zonated = hep_zonated[rownames(hep_zonated) %in% rownames(mtx),]
   reps = 0
-  prev_grad = NULL
   reps_limit = 10 # TODO automatic stopping
   while(reps < reps_limit) {
     zone_obj = getZoneObj(hep_zonated)
@@ -205,11 +214,6 @@ setBaseline = function(mtx, coords = NULL, species = 'human', factor_threshold =
     }
     grad = getZonationGradient_help(mtx, zone_obj)
     grad = grad[colnames(mtx)]
-    if (!is.null(prev_grad)) {
-      prev_grad = grad
-    } else {
-      prev_grad = grad
-    }
     zone2_grad = minMaxNorm(grad)
     zone2_grad = ifelse(zone2_grad < 0.5, zone2_grad * 2, (1 - zone2_grad) * 2)
     cor_zone2_grad = apply(mtx_grad, 1, function(row) cor(zone2_grad, row))
@@ -234,16 +238,6 @@ setBaseline = function(mtx, coords = NULL, species = 'human', factor_threshold =
 #' @export
 getGeneZonation = function(zone_obj) {
   sqrt(data.frame(zone_1 = zone_obj$factors_1, zone_2 = zone_obj$factors_2, zone_3 = zone_obj$factors_3))
-}
-
-getZonationGradient_help = function(mtx, zone_obj) {
-  new_vec.1 = getGeneAvg(mtx, zone_obj$factors_1)
-  new_vec.3 = getGeneAvg(mtx, zone_obj$factors_3)
-  zone_continuous.1 = apply_transformation(new_vec.1, zone_obj$baseline_1)
-  zone_continuous.3 = apply_transformation(new_vec.3, zone_obj$baseline_3)
-  zonescore = (zone_continuous.3 + (1 - zone_continuous.1)) / 2
-  names(zonescore) = colnames(mtx)
-  zonescore * 2 + 1
 }
 
 #' Apply the model to new samples, returning the zonation per cell/spot as a gradient between 1 and 3
