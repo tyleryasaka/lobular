@@ -1,6 +1,88 @@
-ZONES = c('Unzonated', 'Zone_1', 'Zone_2', 'Zone_3', 'Hyperzonated')
+ZONES = c('Zone_1', 'Zone_2', 'Zone_3')
 ZONE_COLORS = c('#504880FF', '#1BB6AFFF', '#FFAD0AFF', '#D72000FF', '#F080D8FF')
 minMaxNorm = function(v) (v - min(v, na.rm = T)) / (max(v, na.rm = T) - min(v, na.rm = T))
+
+em_zonation = function(mtx, init_w, iterations = 10) {
+  mtx = t(mtx)
+  g_m = colMeans(mtx)
+  mtx = scale(mtx, center = g_m, scale = FALSE)
+  v = apply(mtx, 2, var)
+  keep = v > 0 & !is.na(v)
+  mtx = mtx[, keep]
+  w = as.vector(init_w)[keep]
+  names(w) = colnames(mtx)
+  for (i in 1:iterations) {
+    gr = function(gs) {
+      ws = w; ws[!(names(w) %in% gs)] = 0
+      as.vector(mtx %*% ws)
+    }
+    g1 = names(w)[w < 0]
+    g3 = names(w)[w > 0]
+    pa = rank(rank(gr(g1)) + rank(gr(g3))) / (nrow(mtx) + 1)
+    pc = pa - mean(pa)
+    w_new = as.vector(t(mtx) %*% pc)
+    w_new = w_new / sqrt(sum(w_new^2))
+    names(w_new) = colnames(mtx)
+    if (sum(w_new * w, na.rm = TRUE) < 0) w_new = -w_new
+    w = w_new
+    if (cor(w, init_w[keep], use = "complete.obs") < min_cor) {
+      w = (1 - mix_rate) * w + mix_rate * init_w[keep]
+      w = w / sqrt(sum(w^2))
+    }
+  }
+  fr = as.vector(mtx %*% w)
+  get_dens_lims = function(v) {
+    d = density(v, n = 512)
+    thresh = max(d$y) * density_cut
+    range(d$x[d$y > thresh])
+  }
+  lims_f = get_dens_lims(fr); lo = lims_f[1]; hi = lims_f[2]
+  f_ecdf = ecdf(fr)
+  get_sub_model = function(gs) {
+    ws = w; ws[!(names(w) %in% gs)] = 0
+    r = as.vector(mtx %*% ws)
+    b = coef(lm(r ~ fr))
+    l_sub = b[1] + b[2] * lo
+    h_sub = b[1] + b[2] * hi
+    e_sub = ecdf(r)
+    list(e = e_sub, rl = e_sub(l_sub), rh = e_sub(h_sub))
+  }
+  m1 = get_sub_model(g1); m3 = get_sub_model(g3)
+  pt = (f_ecdf(fr) - f_ecdf(lo)) / (f_ecdf(hi) - f_ecdf(lo))
+  list(weights = w, gene_means = g_m, f_e = f_ecdf, f_rl = f_ecdf(lo), f_rh = f_ecdf(hi),
+       q1 = quantile(pt, 1/3, na.rm = TRUE), q2 = quantile(pt, 2/3, na.rm = TRUE),
+       m1 = m1, m3 = m3)
+}
+
+predict_position = function(mtx, model) {
+  common_genes = intersect(rownames(mtx), names(model$weights))
+  mtx = mtx[common_genes, , drop = FALSE]
+  mtx = scale(t(mtx), center = model$gene_means[common_genes], scale = FALSE)
+  w_s = model$weights[common_genes]
+  if(length(w_s) > 0) w_s = w_s / sqrt(sum(w_s^2))
+  raw = as.vector(mtx %*% w_s)
+  (model$f_e(raw) - model$f_rl) / (model$f_rh - model$f_rl)
+}
+
+predict_position_2d = function(mtx, model) {
+  g1 = names(model$weights)[model$weights < 0]
+  g3 = names(model$weights)[model$weights > 0]
+  pg = predict_position(mtx, model)
+  common_genes = intersect(rownames(mtx), names(model$weights))
+  mtx_c = scale(t(mtx[common_genes, , drop = FALSE]), center = model$gene_means[common_genes], scale = FALSE)
+  gp = function(gs, sub_m) {
+    valid_gs = intersect(gs, common_genes)
+    w_s = model$weights[common_genes]; w_s[!(names(w_s) %in% valid_gs)] = 0
+    raw = as.vector(mtx_c %*% w_s)
+    (sub_m$e(raw) - sub_m$rl) / (sub_m$rh - sub_m$rl)
+  }
+  z = ifelse(pg > model$q2, 'Zone_3', ifelse(pg > model$q1, 'Zone_2', 'Zone_1'))
+  data.frame(ZONE_1 = 1 - gp(g1, model$m1), ZONE_3 = gp(g3, model$m3),
+             zonation = pg, zone = factor(z, levels = c('Zone_1', 'Zone_2', 'Zone_3')))
+}
+
+
+
 
 normalizeMatrix = function(mtx) {
   as.matrix(mtx) # no normalization (user should pass in log-transformed matrix)
@@ -113,6 +195,10 @@ apply_transformation = function(new_values, original_values, p = 0) {
   approx(u, (seq_along(u) - 1) / max(1, n - 1), xout = new_values, rule = 2)$y
 }
 
+getZonationGradient_help = function(mtx, zone_obj) {
+  predict_position(mtx, zone_obj) * 2 + 1
+}
+
 #' Obtain an interpolation data frame
 #'
 #' @param mtx Gene expression matrix with genes as rows
@@ -128,16 +214,6 @@ apply_interpolation = function(mtx, coords, zone_obj, resolution = 1) {
   with(coords, akima::interp(x, y, zonation, duplicate = "mean", linear = TRUE, extrap = FALSE, nx = nx, ny = ny))
 }
 
-getZonationGradient_help = function(mtx, zone_obj) {
-  new_vec.1 = getGeneAvg(mtx, zone_obj$factors_1)
-  new_vec.3 = getGeneAvg(mtx, zone_obj$factors_3)
-  zone_continuous.1 = apply_transformation(new_vec.1, zone_obj$baseline_1)
-  zone_continuous.3 = apply_transformation(new_vec.3, zone_obj$baseline_3)
-  zonescore = (zone_continuous.3 + (1 - zone_continuous.1)) / 2
-  names(zonescore) = colnames(mtx)
-  zonescore * 2 + 1
-}
-
 #' Calibrate the model to baseline liver zonation
 #'
 #' @param mtx Gene expression matrix with genes as rows
@@ -146,88 +222,35 @@ getZonationGradient_help = function(mtx, zone_obj) {
 #' @param factor_threshold (Optional) Minimum value for zonation factors to be included in calculation (removes noise).
 #' @return A \code{ZonationObject} with calibrated baseline zonation
 #' @export
-setBaseline = function(mtx, coords = NULL, species = 'human', factor_threshold = 0) {
+setBaseline = function(mtx, coords = NULL, species = 'human', density_cut = 0, min_cor = 0.5, mix_rate = 0.75) {
   if (species == 'human') {
-    orig_annotation = hep_zonated = data.frame(read.csv(system.file('extdata', 'visium_human_zonation.csv', package = 'lobular'), row.names = 1))
+    hep_zonated = data.frame(read.csv(system.file('extdata', 'visium_human_zonation.csv', package = 'lobular'), row.names = 1))
     gene_vars = data.frame(read.csv(system.file('extdata', 'gene_variability_human.csv', package = 'lobular'), row.names = 1))
   } else if (species == 'mouse') {
-    orig_annotation = hep_zonated = data.frame(read.csv(system.file('extdata', 'visium_mouse_zonation.csv', package = 'lobular'), row.names = 1))
+    hep_zonated = data.frame(read.csv(system.file('extdata', 'visium_mouse_zonation.csv', package = 'lobular'), row.names = 1))
     gene_vars = data.frame(read.csv(system.file('extdata', 'gene_variability_mouse.csv', package = 'lobular'), row.names = 1))
   } else {
     stop("Only 'human' and 'mouse' species are supported at the moment. (Specify with species = 'mouse'")
   }
   mtx = as.matrix(mtx)
-
   gene_vars = setNames(gene_vars[,1], rownames(gene_vars))
-  low_var_genes = names(gene_vars[gene_vars < quantile(gene_vars, 0.1)])
-
-  getZoneObj = function(df) {
-    factors.zonated.1 = df$zone_1
-    factors.zonated.2 = df$zone_2
-    factors.zonated.3 = df$zone_3
-    names(factors.zonated.1) = rownames(df)
-    names(factors.zonated.2) = rownames(df)
-    names(factors.zonated.3) = rownames(df)
-    factors.zonated.1 = ifelse(is.na(factors.zonated.1), 0, factors.zonated.1^2)
-    factors.zonated.2 = ifelse(is.na(factors.zonated.2), 0, factors.zonated.2^2)
-    factors.zonated.3 = ifelse(is.na(factors.zonated.3), 0, factors.zonated.3^2)
-    factors.zonated.1 = ifelse(factors.zonated.1 > factor_threshold, factors.zonated.1, 0)
-    factors.zonated.2 = ifelse(factors.zonated.2 > factor_threshold, factors.zonated.2, 0)
-    factors.zonated.3 = ifelse(factors.zonated.3 > factor_threshold, factors.zonated.3, 0)
-
-    scale_factor = 1
-    if (!is.null(coords)) {
-      x_range = abs(range(coords$x)[[1]] - range(coords$x)[[2]])
-      if (x_range < 100) {
-        scale_factor = 50
-      }
-    }
-
-    zonescore_raw.1 = getGeneAvg(mtx, factors.zonated.1)
-    zonescore_raw.2 = getGeneAvg(mtx, factors.zonated.2)
-    zonescore_raw.3 = getGeneAvg(mtx, factors.zonated.3)
-
-    ZonationObject(
-      baseline_1 = zonescore_raw.1,
-      baseline_2 = zonescore_raw.2,
-      baseline_3 = zonescore_raw.3,
-      species = species,
-      factors_1 = factors.zonated.1,
-      factors_2 = factors.zonated.2,
-      factors_3 = factors.zonated.3,
-      scale_factor = scale_factor
-    )
-  }
-
-  hep_zonated = hep_zonated[rownames(hep_zonated) %in% rownames(mtx),]
-  reps = 0
-  reps_limit = 10 # TODO automatic stopping
-  while(reps < reps_limit) {
-    zone_obj = getZoneObj(hep_zonated)
-
-    hep_zonated_nonzero = hep_zonated[rowSums(hep_zonated != 0 & !is.na(hep_zonated)) > 0, ]
-    if (reps == reps_limit - 1) {
-      mtx_grad = mtx
+  low_var_genes = names(gene_vars[gene_vars < quantile(gene_vars, 0.5)])
+  hep_zonated = hep_zonated[rownames(hep_zonated) %in% low_var_genes,]
+  initial_weights_1 = hep_zonated$zone_1
+  names(initial_weights_1) = rownames(hep_zonated)
+  initial_weights_1 = initial_weights_1[initial_weights_1 > 0] * -1
+  initial_weights_3 = hep_zonated$zone_3
+  names(initial_weights_3) = rownames(hep_zonated)
+  initial_weights_3 = initial_weights_3[initial_weights_3 > 0]
+  initial_weights = c(initial_weights_1, initial_weights_3)
+  initial_weights = sapply(rownames(mtx), function(x) {
+    if (x %in% names(initial_weights)) {
+      initial_weights[[x]]
     } else {
-      mtx_grad = mtx[rownames(mtx) %in% rownames(hep_zonated_nonzero),]
-      mtx_grad = mtx_grad[rownames(mtx_grad) %in% low_var_genes,]
+      0
     }
-    grad = getZonationGradient_help(mtx, zone_obj)
-    grad = grad[colnames(mtx)]
-    zone2_grad = minMaxNorm(grad)
-    zone2_grad = ifelse(zone2_grad < 0.5, zone2_grad * 2, (1 - zone2_grad) * 2)
-    cor_zone2_grad = apply(mtx_grad, 1, function(row) cor(zone2_grad, row))
-    cor_grad = apply(mtx_grad, 1, function(row) cor(grad, row))
-    cor_grad_p = apply(mtx_grad, 1, function(row) cor.test(grad, row, method = 'pearson', use = 'pairwise.complete.obs')$p.value)
-    cor_grad_p = p.adjust(cor_grad_p)
-    cor_grad = ifelse(cor_grad_p < 0.05, cor_grad, 0)
-    cor_grad_1 = ifelse(cor_grad < 0, abs(cor_grad), 0)
-    cor_grad_2 = ifelse(cor_zone2_grad > 0, cor_zone2_grad, 0)
-    cor_grad_3 = ifelse(cor_grad > 0, cor_grad, 0)
-    hep_zonated = data.frame(zone_1 = cor_grad_1, zone_2 = cor_grad_2, zone_3 = cor_grad_3)
-    reps = reps + 1
-  }
-  getZoneObj(hep_zonated)
+  })
+  em_zonation(mtx, initial_weights, density_cut = density_cut, min_cor = min_cor, mix_rate = mix_rate)
 }
 
 #' Get the pearson correlations between zone scores and genes
@@ -259,36 +282,15 @@ getZonationGradient = function(mtx, zone_obj) {
 #' @export
 getZone = function(mtx, zone_obj) {
   mtx = normalizeMatrix(mtx)
-  new_vec.1 = getGeneAvg(mtx, zone_obj$factors_1)
-  new_vec.3 = getGeneAvg(mtx, zone_obj$factors_3)
-  zone_continuous.1 = apply_transformation(new_vec.1, zone_obj$baseline_1)
-  zone_continuous.3 = apply_transformation(new_vec.3, zone_obj$baseline_3)
-  zonescore = (zone_continuous.3 + (1 - zone_continuous.1)) / 2
+  zonescore = predict_position(mtx, zone_obj)
   zone = ifelse(zonescore < (1 / 3), 'Zone_1', ifelse(zonescore < (2 / 3), 'Zone_2', 'Zone_3'))
-  zone = ifelse(zone_continuous.1 + zone_continuous.3 < 0.3333, 'Unzonated', zone)
-  zone = ifelse(zone_continuous.1 + zone_continuous.3 > 1.6666, 'Hyperzonated', zone)
   zone = factor(zone, levels = ZONES)
   names(zone) = colnames(mtx)
   zone
 }
 
 getZonation2d_help = function(mtx, zone_obj) {
-  new_vec.1 = getGeneAvg(mtx, zone_obj$factors_1)
-  new_vec.3 = getGeneAvg(mtx, zone_obj$factors_3)
-  zone_continuous.1 = apply_transformation(new_vec.1, zone_obj$baseline_1)
-  zone_continuous.3 = apply_transformation(new_vec.3, zone_obj$baseline_3)
-  if (zone_obj$species == 'mouse') {
-    new_vec.2 = getGeneAvg(mtx, zone_obj$factors_2)
-    zone_continuous.2 = apply_transformation(new_vec.2, zone_obj$baseline_2)
-  } else {
-    zone_continuous.2 = rep(0, length(zone_continuous.1))
-  }
-  zonescore = (zone_continuous.3 + (1 - zone_continuous.1)) / 2
-  zone = ifelse(zonescore < (1 / 3), 'Zone_1', ifelse(zonescore < (2 / 3), 'Zone_2', 'Zone_3'))
-  zone = ifelse(zone_continuous.1 + zone_continuous.3 < 0.3333, 'Unzonated', zone)
-  zone = ifelse(zone_continuous.1 + zone_continuous.3 > 1.6666, 'Hyperzonated', zone)
-  zone = factor(zone, levels = ZONES)
-  zone.2d = data.frame('ZONE_1' = zone_continuous.1, 'ZONE_2' = zone_continuous.2, 'ZONE_3' = zone_continuous.3, 'zone' = zone, 'zonation' = (zonescore * 2 + 1))
+  zone.2d = predict_position_2d(mtx, zone_obj)
   rownames(zone.2d) = colnames(mtx)
   zone.2d
 }

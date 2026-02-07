@@ -1,7 +1,7 @@
 Package: lobular
 Type: Package
 Title: Lobular
-Version: 0.5.4
+Version: 0.5.5
 Author: Tyler Yasaka
 Maintainer: Tyler Yasaka <tyy4@pitt.edu>
 Description: Inference of hepatocyte zonation in a single cell (+/- spatial) dataset
