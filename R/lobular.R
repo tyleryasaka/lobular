@@ -4,54 +4,68 @@ minMaxNorm = function(v) (v - min(v, na.rm = T)) / (max(v, na.rm = T) - min(v, n
 
 em_zonation = function(mtx, init_w, iterations, density_cut, min_cor, mix_rate) {
   mtx = t(mtx)
+  common = intersect(colnames(mtx), names(init_w))
+  mtx = mtx[, common]
+  init_w = init_w[common]
   g_m = colMeans(mtx)
   mtx = scale(mtx, center = g_m, scale = FALSE)
   v = apply(mtx, 2, var)
   keep = v > 0 & !is.na(v)
   mtx = mtx[, keep]
-  w = as.vector(init_w)[keep]
+  w = init_w[keep]
+  w = w / sqrt(sum(w^2))
   names(w) = colnames(mtx)
+  init_w_kept = w
   for (i in 1:iterations) {
-    gr = function(gs) {
-      ws = w; ws[!(names(w) %in% gs)] = 0
-      as.vector(mtx %*% ws)
-    }
     g1 = names(w)[w < 0]
     g3 = names(w)[w > 0]
-    pa = rank(rank(gr(g1)) + rank(gr(g3))) / (nrow(mtx) + 1)
+    w1 = w
+    w1[!(names(w) %in% g1)] = 0
+    w3 = w
+    w3[!(names(w) %in% g3)] = 0
+    r1 = as.vector(mtx %*% w1)
+    r3 = as.vector(mtx %*% w3)
+    pa = rank(rank(r1) + rank(r3)) / (nrow(mtx) + 1)
     pc = pa - mean(pa)
     w_new = as.vector(t(mtx) %*% pc)
-    w_new = w_new / sqrt(sum(w_new^2))
+    w_new = w_new / sqrt(sum(w_new^2, na.rm = TRUE))
     names(w_new) = colnames(mtx)
     if (sum(w_new * w, na.rm = TRUE) < 0) w_new = -w_new
     w = w_new
-    if (cor(w, init_w[keep], use = "complete.obs") < min_cor) {
-      w = (1 - mix_rate) * w + mix_rate * init_w[keep]
-      w = w / sqrt(sum(w^2))
+    if (cor(w, init_w_kept, use = "complete.obs") < min_cor) {
+      w = (1 - mix_rate) * w + mix_rate * init_w_kept
+      w = w / sqrt(sum(w^2, na.rm = TRUE))
     }
   }
   fr = as.vector(mtx %*% w)
-  get_dens_lims = function(v) {
-    d = density(v, n = 512)
-    thresh = max(d$y) * density_cut
-    range(d$x[d$y > thresh])
-  }
-  lims_f = get_dens_lims(fr); lo = lims_f[1]; hi = lims_f[2]
+  d = density(fr, n = 512)
+  thresh = max(d$y) * density_cut
+  lims_f = range(d$x[d$y > thresh])
+  lo = lims_f[1]
+  hi = lims_f[2]
   f_ecdf = ecdf(fr)
-  get_sub_model = function(gs) {
-    ws = w; ws[!(names(w) %in% gs)] = 0
-    r = as.vector(mtx %*% ws)
-    b = coef(lm(r ~ fr))
-    l_sub = b[1] + b[2] * lo
-    h_sub = b[1] + b[2] * hi
+  get_sub_model = function(gs, w_vec, m_mtx, f_vec, l_val, h_val) {
+    ws = w_vec
+    ws[!(names(w_vec) %in% gs)] = 0
+    r = as.vector(m_mtx %*% ws)
+    b = coef(lm(r ~ f_vec))
     e_sub = ecdf(r)
-    list(e = e_sub, rl = e_sub(l_sub), rh = e_sub(h_sub))
+    list(e = e_sub, rl = e_sub(b[1] + b[2] * l_val), rh = e_sub(b[1] + b[2] * h_val))
   }
-  m1 = get_sub_model(g1); m3 = get_sub_model(g3)
+  m1 = get_sub_model(g1, w, mtx, fr, lo, hi)
+  m3 = get_sub_model(g3, w, mtx, fr, lo, hi)
   pt = (f_ecdf(fr) - f_ecdf(lo)) / (f_ecdf(hi) - f_ecdf(lo))
-  list(weights = w, gene_means = g_m, f_e = f_ecdf, f_rl = f_ecdf(lo), f_rh = f_ecdf(hi),
-       q1 = quantile(pt, 1/3, na.rm = TRUE), q2 = quantile(pt, 2/3, na.rm = TRUE),
-       m1 = m1, m3 = m3)
+  return(list(
+    weights = w,
+    gene_means = g_m,
+    f_e = f_ecdf,
+    f_rl = f_ecdf(lo),
+    f_rh = f_ecdf(hi),
+    q1 = quantile(pt, 1/3, na.rm = TRUE),
+    q2 = quantile(pt, 2/3, na.rm = TRUE),
+    m1 = m1,
+    m3 = m3
+  ))
 }
 
 predict_position = function(mtx, model) {
@@ -222,35 +236,16 @@ apply_interpolation = function(mtx, coords, zone_obj, resolution = 1) {
 #' @param factor_threshold (Optional) Minimum value for zonation factors to be included in calculation (removes noise).
 #' @return A \code{ZonationObject} with calibrated baseline zonation
 #' @export
-setBaseline = function(mtx, coords = NULL, species = 'human', density_cut = 0, min_cor = 0.5, mix_rate = 0.75) {
+setBaseline = function(mtx, coords = NULL, species = 'human', regularization = 0.7) {
   if (species == 'human') {
-    hep_zonated = data.frame(read.csv(system.file('extdata', 'visium_human_zonation.csv', package = 'lobular'), row.names = 1))
-    gene_vars = data.frame(read.csv(system.file('extdata', 'gene_variability_human.csv', package = 'lobular'), row.names = 1))
+    initial_weights = readRDS(system.file('extdata', 'initial_weights_human.RDS', package = 'lobular'))
   } else if (species == 'mouse') {
-    hep_zonated = data.frame(read.csv(system.file('extdata', 'visium_mouse_zonation.csv', package = 'lobular'), row.names = 1))
-    gene_vars = data.frame(read.csv(system.file('extdata', 'gene_variability_mouse.csv', package = 'lobular'), row.names = 1))
+    initial_weights = readRDS(system.file('extdata', 'initial_weights_mouse.RDS', package = 'lobular'))
   } else {
     stop("Only 'human' and 'mouse' species are supported at the moment. (Specify with species = 'mouse'")
   }
   mtx = as.matrix(mtx)
-  gene_vars = setNames(gene_vars[,1], rownames(gene_vars))
-  low_var_genes = names(gene_vars[gene_vars < quantile(gene_vars, 0.5)])
-  hep_zonated = hep_zonated[rownames(hep_zonated) %in% low_var_genes,]
-  initial_weights_1 = hep_zonated$zone_1
-  names(initial_weights_1) = rownames(hep_zonated)
-  initial_weights_1 = initial_weights_1[initial_weights_1 > 0] * -1
-  initial_weights_3 = hep_zonated$zone_3
-  names(initial_weights_3) = rownames(hep_zonated)
-  initial_weights_3 = initial_weights_3[initial_weights_3 > 0]
-  initial_weights = c(initial_weights_1, initial_weights_3)
-  initial_weights = sapply(rownames(mtx), function(x) {
-    if (x %in% names(initial_weights)) {
-      initial_weights[[x]]
-    } else {
-      0
-    }
-  })
-  em_zonation(mtx, initial_weights, iterations = 10, density_cut = density_cut, min_cor = min_cor, mix_rate = mix_rate)
+  em_zonation(mtx, initial_weights, iterations = 10, density_cut = 0, min_cor = regularization, mix_rate = regularization)
 }
 
 #' Get the pearson correlations between zone scores and genes
