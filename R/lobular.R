@@ -236,7 +236,7 @@ apply_interpolation = function(mtx, coords, zone_obj, resolution = 1) {
 #' @param factor_threshold (Optional) Minimum value for zonation factors to be included in calculation (removes noise).
 #' @return A \code{ZonationObject} with calibrated baseline zonation
 #' @export
-setBaseline = function(mtx, coords = NULL, species = 'human', regularization = 0.7) {
+setBaseline = function(mtx, coords = NULL, species = 'human', min_cor = 0.7, mix_rate = 0.7) {
   if (species == 'human') {
     initial_weights = readRDS(system.file('extdata', 'initial_weights_human.RDS', package = 'lobular'))
   } else if (species == 'mouse') {
@@ -245,7 +245,7 @@ setBaseline = function(mtx, coords = NULL, species = 'human', regularization = 0
     stop("Only 'human' and 'mouse' species are supported at the moment. (Specify with species = 'mouse'")
   }
   mtx = as.matrix(mtx)
-  em_zonation(mtx, initial_weights, iterations = 10, density_cut = 0, min_cor = regularization, mix_rate = regularization)
+  em_zonation(mtx, initial_weights, iterations = 10, density_cut = 0, min_cor = min_cor, mix_rate = mix_rate)
 }
 
 #' Get the pearson correlations between zone scores and genes
