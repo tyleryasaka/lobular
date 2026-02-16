@@ -4,18 +4,20 @@ minMaxNorm = function(v) (v - min(v, na.rm = T)) / (max(v, na.rm = T) - min(v, n
 
 em_zonation = function(mtx, init_w, iterations, density_cut, min_cor, mix_rate) {
   mtx = t(mtx)
-  common = intersect(colnames(mtx), names(init_w))
-  mtx = mtx[, common]
-  init_w = init_w[common]
   g_m = colMeans(mtx)
   mtx = scale(mtx, center = g_m, scale = FALSE)
   v = apply(mtx, 2, var)
   keep = v > 0 & !is.na(v)
   mtx = mtx[, keep]
-  w = init_w[keep]
-  w = w / sqrt(sum(w^2))
+  g_m = g_m[keep]
+
+  w = rep(0, ncol(mtx))
   names(w) = colnames(mtx)
+  common = intersect(colnames(mtx), names(init_w))
+  w[common] = init_w[common]
+  if (sum(w^2) > 0) w = w / sqrt(sum(w^2))
   init_w_kept = w
+
   for (i in 1:iterations) {
     g1 = names(w)[w < 0]
     g3 = names(w)[w > 0]
@@ -236,7 +238,7 @@ apply_interpolation = function(mtx, coords, zone_obj, resolution = 1) {
 #' @param factor_threshold (Optional) Minimum value for zonation factors to be included in calculation (removes noise).
 #' @return A \code{ZonationObject} with calibrated baseline zonation
 #' @export
-setBaseline = function(mtx, coords = NULL, species = 'human', min_cor = 0.7, mix_rate = 0.7) {
+setBaseline = function(mtx, coords = NULL, species = 'human', min_cor = 0.5, mix_rate = 0.5) {
   if (species == 'human') {
     initial_weights = readRDS(system.file('extdata', 'initial_weights_human.RDS', package = 'lobular'))
   } else if (species == 'mouse') {
