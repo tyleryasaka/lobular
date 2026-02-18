@@ -10,14 +10,12 @@ em_zonation = function(mtx, init_w, iterations, density_cut, min_cor, mix_rate) 
   keep = v > 0 & !is.na(v)
   mtx = mtx[, keep]
   g_m = g_m[keep]
-
   w = rep(0, ncol(mtx))
   names(w) = colnames(mtx)
   common = intersect(colnames(mtx), names(init_w))
   w[common] = init_w[common]
   if (sum(w^2) > 0) w = w / sqrt(sum(w^2))
   init_w_kept = w
-
   for (i in 1:iterations) {
     g1 = names(w)[w < 0]
     g3 = names(w)[w > 0]
@@ -34,7 +32,7 @@ em_zonation = function(mtx, init_w, iterations, density_cut, min_cor, mix_rate) 
     names(w_new) = colnames(mtx)
     if (sum(w_new * w, na.rm = TRUE) < 0) w_new = -w_new
     w = w_new
-    if (cor(w, init_w_kept, use = "complete.obs") < min_cor) {
+    if (cor(w, init_w_kept, use = "complete.obs", method = "spearman") < min_cor) {
       w = (1 - mix_rate) * w + mix_rate * init_w_kept
       w = w / sqrt(sum(w^2, na.rm = TRUE))
     }
@@ -246,6 +244,7 @@ setBaseline = function(mtx, coords = NULL, species = 'human', min_cor = 0.5, mix
   } else {
     stop("Only 'human' and 'mouse' species are supported at the moment. (Specify with species = 'mouse'")
   }
+  # initial_weights = initial_weights[abs(initial_weights) > 0.025]
   mtx = as.matrix(mtx)
   em_zonation(mtx, initial_weights, iterations = 10, density_cut = 0, min_cor = min_cor, mix_rate = mix_rate)
 }
