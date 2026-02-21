@@ -2,72 +2,6 @@ ZONES = c('Zone_1', 'Zone_2', 'Zone_3')
 ZONE_COLORS = c('#504880FF', '#1BB6AFFF', '#FFAD0AFF', '#D72000FF', '#F080D8FF')
 minMaxNorm = function(v) (v - min(v, na.rm = T)) / (max(v, na.rm = T) - min(v, na.rm = T))
 
-em_zonation = function(mtx, init_w, iterations, density_cut, min_cor, mix_rate) {
-  mtx = t(mtx)
-  g_m = colMeans(mtx)
-  mtx = scale(mtx, center = g_m, scale = FALSE)
-  v = apply(mtx, 2, var)
-  keep = v > 0 & !is.na(v)
-  mtx = mtx[, keep]
-  g_m = g_m[keep]
-  w = rep(0, ncol(mtx))
-  names(w) = colnames(mtx)
-  common = intersect(colnames(mtx), names(init_w))
-  w[common] = init_w[common]
-  if (sum(w^2) > 0) w = w / sqrt(sum(w^2))
-  init_w_kept = w
-  for (i in 1:iterations) {
-    g1 = names(w)[w < 0]
-    g3 = names(w)[w > 0]
-    w1 = w
-    w1[!(names(w) %in% g1)] = 0
-    w3 = w
-    w3[!(names(w) %in% g3)] = 0
-    r1 = as.vector(mtx %*% w1)
-    r3 = as.vector(mtx %*% w3)
-    pa = rank(rank(r1) + rank(r3)) / (nrow(mtx) + 1)
-    pc = pa - mean(pa)
-    w_new = as.vector(t(mtx) %*% pc)
-    w_new = w_new / sqrt(sum(w_new^2, na.rm = TRUE))
-    names(w_new) = colnames(mtx)
-    if (sum(w_new * w, na.rm = TRUE) < 0) w_new = -w_new
-    w = w_new
-    if (cor(w, init_w_kept, use = "complete.obs", method = "spearman") < min_cor) {
-      w = (1 - mix_rate) * w + mix_rate * init_w_kept
-      w = w / sqrt(sum(w^2, na.rm = TRUE))
-    }
-  }
-  fr = as.vector(mtx %*% w)
-  d = density(fr, n = 512)
-  thresh = max(d$y) * density_cut
-  lims_f = range(d$x[d$y > thresh])
-  lo = lims_f[1]
-  hi = lims_f[2]
-  f_ecdf = ecdf(fr)
-  get_sub_model = function(gs, w_vec, m_mtx, f_vec, l_val, h_val) {
-    ws = w_vec
-    ws[!(names(w_vec) %in% gs)] = 0
-    r = as.vector(m_mtx %*% ws)
-    b = coef(lm(r ~ f_vec))
-    e_sub = ecdf(r)
-    list(e = e_sub, rl = e_sub(b[1] + b[2] * l_val), rh = e_sub(b[1] + b[2] * h_val))
-  }
-  m1 = get_sub_model(g1, w, mtx, fr, lo, hi)
-  m3 = get_sub_model(g3, w, mtx, fr, lo, hi)
-  pt = (f_ecdf(fr) - f_ecdf(lo)) / (f_ecdf(hi) - f_ecdf(lo))
-  return(list(
-    weights = w,
-    gene_means = g_m,
-    f_e = f_ecdf,
-    f_rl = f_ecdf(lo),
-    f_rh = f_ecdf(hi),
-    q1 = quantile(pt, 1/3, na.rm = TRUE),
-    q2 = quantile(pt, 2/3, na.rm = TRUE),
-    m1 = m1,
-    m3 = m3
-  ))
-}
-
 predict_position = function(mtx, model) {
   common_genes = intersect(rownames(mtx), names(model$weights))
   mtx = mtx[common_genes, , drop = FALSE]
@@ -99,7 +33,9 @@ predict_position_2d = function(mtx, model) {
 
 
 normalizeMatrix = function(mtx) {
-  as.matrix(mtx) # no normalization (user should pass in log-transformed matrix)
+  mtx = t(scale(t(as.matrix(mtx)), center = FALSE))
+  mtx[is.na(mtx)] = 0
+  mtx
 }
 
 #' Create a Zonation Object
@@ -236,7 +172,7 @@ apply_interpolation = function(mtx, coords, zone_obj, resolution = 1) {
 #' @param factor_threshold (Optional) Minimum value for zonation factors to be included in calculation (removes noise).
 #' @return A \code{ZonationObject} with calibrated baseline zonation
 #' @export
-setBaseline = function(mtx, coords = NULL, species = 'human', min_cor = 0.5, mix_rate = 0.5) {
+setBaseline = function(mtx, coords = NULL, species = 'human', min_cor = 0.5, mix_rate = 0.5, verbose = FALSE) {
   if (species == 'human') {
     initial_weights = readRDS(system.file('extdata', 'initial_weights_human.RDS', package = 'lobular'))
   } else if (species == 'mouse') {
@@ -244,9 +180,8 @@ setBaseline = function(mtx, coords = NULL, species = 'human', min_cor = 0.5, mix
   } else {
     stop("Only 'human' and 'mouse' species are supported at the moment. (Specify with species = 'mouse'")
   }
-  # initial_weights = initial_weights[abs(initial_weights) > 0.025]
-  mtx = as.matrix(mtx)
-  em_zonation(mtx, initial_weights, iterations = 10, density_cut = 0, min_cor = min_cor, mix_rate = mix_rate)
+  initial_weights = initial_weights[abs(initial_weights) > 0.01]
+  em_zonation(mtx, initial_weights, iterations = 10, density_cut = 0, min_cor = min_cor, mix_rate = mix_rate, rigidity = min_cor, verbose = verbose)
 }
 
 #' Get the pearson correlations between zone scores and genes
