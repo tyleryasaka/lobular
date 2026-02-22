@@ -1,4 +1,12 @@
-em_zonation = function(mtx, init_w, iterations, density_cut, min_cor, mix_rate, rigidity = 1, verbose = FALSE) {
+em_zonation = function(mtx, init_w, iterations, density_cut, min_cor, mix_rate, rigidity = 1, norm_mtx = NULL, verbose = FALSE) {
+  if (!is.null(norm_mtx)) {
+    if (!identical(dim(norm_mtx), dim(mtx)))
+      stop("norm_mtx must have the same dimensions as mtx")
+    if (!identical(rownames(norm_mtx), rownames(mtx)))
+      stop("norm_mtx must have the same row names (genes) as mtx")
+    if (!identical(colnames(norm_mtx), colnames(mtx)))
+      stop("norm_mtx must have the same column names (cells) as mtx")
+  }
   rm = Matrix::rowMeans(mtx)
   raw_var = Matrix::rowMeans(mtx^2) - rm^2
   n_hvg = min(2000, nrow(mtx))
@@ -54,17 +62,20 @@ em_zonation = function(mtx, init_w, iterations, density_cut, min_cor, mix_rate, 
       }
     }
   }
-  mtx = normalizeMatrix(mtx)
-  mtx = t(mtx)
-  g_m = colMeans(mtx)
-  mtx = scale(mtx, center = g_m, scale = FALSE)
-  v = apply(mtx, 2, var)
+  if (!is.null(norm_mtx)) {
+    mtx_pos = t(norm_mtx)
+  } else {
+    mtx_pos = t(normalizeMatrix(mtx))
+  }
+  g_m = colMeans(mtx_pos)
+  mtx_pos = scale(mtx_pos, center = g_m, scale = FALSE)
+  v = apply(mtx_pos, 2, var)
   keep = v > 0 & !is.na(v)
-  mtx = mtx[, keep]
+  mtx_pos = mtx_pos[, keep]
   g_m = g_m[keep]
-  w = rep(0, ncol(mtx))
-  names(w) = colnames(mtx)
-  common = intersect(colnames(mtx), names(init_w))
+  w = rep(0, ncol(mtx_pos))
+  names(w) = colnames(mtx_pos)
+  common = intersect(colnames(mtx_pos), names(init_w))
   w[common] = init_w[common]
   if (sum(w^2) > 0) w = w / sqrt(sum(w^2))
   init_w_kept = w
@@ -81,13 +92,13 @@ em_zonation = function(mtx, init_w, iterations, density_cut, min_cor, mix_rate, 
     w1[!(names(w) %in% g1)] = 0
     w3 = w
     w3[!(names(w) %in% g3)] = 0
-    r1 = as.vector(mtx %*% w1)
-    r3 = as.vector(mtx %*% w3)
-    pa = rank(rank(r1) + rank(r3)) / (nrow(mtx) + 1)
+    r1 = as.vector(mtx_pos %*% w1)
+    r3 = as.vector(mtx_pos %*% w3)
+    pa = rank(rank(r1) + rank(r3)) / (nrow(mtx_pos) + 1)
     pc = pa - mean(pa)
-    w_new = as.vector(t(mtx) %*% pc)
+    w_new = as.vector(t(mtx_pos) %*% pc)
     w_new = w_new / sqrt(sum(w_new^2, na.rm = TRUE))
-    names(w_new) = colnames(mtx)
+    names(w_new) = colnames(mtx_pos)
     if (sum(w_new * w, na.rm = TRUE) < 0) w_new = -w_new
     w = w_new
     if (cor(w, init_w_kept, use = "complete.obs", method = "spearman") < min_cor) {
@@ -97,7 +108,7 @@ em_zonation = function(mtx, init_w, iterations, density_cut, min_cor, mix_rate, 
       w = w_mixed / sqrt(sum(w_mixed^2, na.rm = TRUE))
     }
   }
-  fr = as.vector(mtx %*% w)
+  fr = as.vector(mtx_pos %*% w)
   d = density(fr, n = 512)
   thresh = max(d$y) * density_cut
   lims_f = range(d$x[d$y > thresh])
@@ -114,8 +125,8 @@ em_zonation = function(mtx, init_w, iterations, density_cut, min_cor, mix_rate, 
   }
   g1 = names(w)[w < 0]
   g3 = names(w)[w > 0]
-  m1 = get_sub_model(g1, w, mtx, fr, lo, hi)
-  m3 = get_sub_model(g3, w, mtx, fr, lo, hi)
+  m1 = get_sub_model(g1, w, mtx_pos, fr, lo, hi)
+  m3 = get_sub_model(g3, w, mtx_pos, fr, lo, hi)
   pt = (f_ecdf(fr) - f_ecdf(lo)) / (f_ecdf(hi) - f_ecdf(lo))
   return(list(
     weights = w,
@@ -126,6 +137,7 @@ em_zonation = function(mtx, init_w, iterations, density_cut, min_cor, mix_rate, 
     q1 = quantile(pt, 1/3, na.rm = TRUE),
     q2 = quantile(pt, 2/3, na.rm = TRUE),
     m1 = m1,
-    m3 = m3
+    m3 = m3,
+    norm_provided = is.null(norm_mtx)
   ))
 }
