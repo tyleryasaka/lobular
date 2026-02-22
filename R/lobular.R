@@ -2,22 +2,56 @@ ZONES = c('Zone_1', 'Zone_2', 'Zone_3')
 ZONE_COLORS = c('#504880FF', '#1BB6AFFF', '#FFAD0AFF', '#D72000FF', '#F080D8FF')
 minMaxNorm = function(v) (v - min(v, na.rm = T)) / (max(v, na.rm = T) - min(v, na.rm = T))
 
+normalizeMatrix = function(mtx) {
+  mtx = t(scale(t(as.matrix(mtx)), center = FALSE))
+  mtx[is.na(mtx)] = 0
+  mtx
+}
+
+check_input_consistency = function(mtx, model) {
+  common = intersect(rownames(mtx), names(model$gene_means))
+  if (length(common) == 0) stop("No genes in common between mtx and model")
+  input_means = rowMeans(mtx[common, , drop = FALSE])
+  stored_means = model$gene_means[common]
+  if (model$norm_provided) {
+    if (all(mtx[common, ] == floor(mtx[common, ]), na.rm = TRUE))
+      warning("Model was trained with user-provided normalized data, but mtx appears to contain only integers. Did you pass raw counts?")
+  } else {
+    if (!all(mtx[common, ] == floor(mtx[common, ]), na.rm = TRUE))
+      warning("Model was trained without normalized data (expects raw counts), but mtx contains non-integer values.")
+  }
+  ratio = median(abs(input_means), na.rm = TRUE) / median(abs(stored_means), na.rm = TRUE)
+  if (ratio > 10 || ratio < 0.1)
+    warning(sprintf("Input gene means differ from training gene means by ~%.0fx. Check that mtx is on the expected scale.", ratio))
+}
+
 predict_position = function(mtx, model) {
-  common_genes = intersect(rownames(mtx), names(model$weights))
-  mtx = mtx[common_genes, , drop = FALSE]
-  mtx = scale(t(mtx), center = model$gene_means[common_genes], scale = FALSE)
+  check_input_consistency(mtx, model)
+  if (!model$norm_provided) {
+    pred_mtx = normalizeMatrix(mtx)
+  } else {
+    pred_mtx = mtx
+  }
+  common_genes = intersect(rownames(pred_mtx), names(model$weights))
+  pred_mtx = pred_mtx[common_genes, , drop = FALSE]
+  pred_mtx = scale(t(pred_mtx), center = model$gene_means[common_genes], scale = FALSE)
   w_s = model$weights[common_genes]
   if(length(w_s) > 0) w_s = w_s / sqrt(sum(w_s^2))
-  raw = as.vector(mtx %*% w_s)
+  raw = as.vector(pred_mtx %*% w_s)
   (model$f_e(raw) - model$f_rl) / (model$f_rh - model$f_rl)
 }
 
 predict_position_2d = function(mtx, model) {
+  if (!model$norm_provided) {
+    pred_mtx = normalizeMatrix(mtx)
+  } else {
+    pred_mtx = mtx
+  }
   g1 = names(model$weights)[model$weights < 0]
   g3 = names(model$weights)[model$weights > 0]
   pg = predict_position(mtx, model)
   common_genes = intersect(rownames(mtx), names(model$weights))
-  mtx_c = scale(t(mtx[common_genes, , drop = FALSE]), center = model$gene_means[common_genes], scale = FALSE)
+  mtx_c = scale(t(pred_mtx[common_genes, , drop = FALSE]), center = model$gene_means[common_genes], scale = FALSE)
   gp = function(gs, sub_m) {
     valid_gs = intersect(gs, common_genes)
     w_s = model$weights[common_genes]; w_s[!(names(w_s) %in% valid_gs)] = 0
@@ -27,15 +61,6 @@ predict_position_2d = function(mtx, model) {
   z = ifelse(pg > model$q2, 'Zone_3', ifelse(pg > model$q1, 'Zone_2', 'Zone_1'))
   data.frame(ZONE_1 = 1 - gp(g1, model$m1), ZONE_3 = gp(g3, model$m3),
              zonation = pg, zone = factor(z, levels = c('Zone_1', 'Zone_2', 'Zone_3')))
-}
-
-
-
-
-normalizeMatrix = function(mtx) {
-  mtx = t(scale(t(as.matrix(mtx)), center = FALSE))
-  mtx[is.na(mtx)] = 0
-  mtx
 }
 
 #' Create a Zonation Object
@@ -172,7 +197,7 @@ apply_interpolation = function(mtx, coords, zone_obj, resolution = 1) {
 #' @param factor_threshold (Optional) Minimum value for zonation factors to be included in calculation (removes noise).
 #' @return A \code{ZonationObject} with calibrated baseline zonation
 #' @export
-setBaseline = function(mtx, coords = NULL, species = 'human', regularization = 0.8, verbose = FALSE) {
+setBaseline = function(mtx, norm_mtx = NULL, coords = NULL, species = 'human', regularization = 0.8, verbose = FALSE) {
   if (species == 'human') {
     initial_weights = readRDS(system.file('extdata', 'initial_weights_human.RDS', package = 'lobular'))
   } else if (species == 'mouse') {
@@ -181,7 +206,7 @@ setBaseline = function(mtx, coords = NULL, species = 'human', regularization = 0
     stop("Only 'human' and 'mouse' species are supported at the moment. (Specify with species = 'mouse'")
   }
   initial_weights = initial_weights[abs(initial_weights) > 0.01]
-  em_zonation(mtx, initial_weights, iterations = 10, density_cut = 0, min_cor = regularization, mix_rate = regularization, rigidity = regularization, verbose = verbose)
+  em_zonation(mtx, initial_weights, iterations = 10, density_cut = 0, min_cor = regularization, mix_rate = regularization, rigidity = regularization, norm_mtx = norm_mtx, verbose = verbose)
 }
 
 #' Get the pearson correlations between zone scores and genes

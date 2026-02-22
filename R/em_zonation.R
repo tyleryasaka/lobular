@@ -138,6 +138,6 @@ em_zonation = function(mtx, init_w, iterations, density_cut, min_cor, mix_rate, 
     q2 = quantile(pt, 2/3, na.rm = TRUE),
     m1 = m1,
     m3 = m3,
-    norm_provided = is.null(norm_mtx)
+    norm_provided = !is.null(norm_mtx)
   ))
 }
