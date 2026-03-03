@@ -3,7 +3,7 @@ ZONE_COLORS = c('#504880FF', '#1BB6AFFF', '#FFAD0AFF', '#D72000FF', '#F080D8FF')
 minMaxNorm = function(v) (v - min(v, na.rm = T)) / (max(v, na.rm = T) - min(v, na.rm = T))
 
 normalizeMatrix = function(mtx) {
-  mtx = t(scale(t(as.matrix(mtx)), center = FALSE))
+  # mtx = t(scale(t(as.matrix(mtx)), center = FALSE))
   mtx[is.na(mtx)] = 0
   mtx
 }
@@ -197,7 +197,7 @@ apply_interpolation = function(mtx, coords, zone_obj, resolution = 1) {
 #' @param factor_threshold (Optional) Minimum value for zonation factors to be included in calculation (removes noise).
 #' @return A \code{ZonationObject} with calibrated baseline zonation
 #' @export
-setBaseline = function(mtx, norm_mtx = NULL, coords = NULL, species = 'human', regularization = 0.8, verbose = FALSE) {
+setBaseline = function(mtx, coords = NULL, species = 'human', regularization = 0.8, verbose = FALSE) {
   if (species == 'human') {
     initial_weights = readRDS(system.file('extdata', 'initial_weights_human.RDS', package = 'lobular'))
   } else if (species == 'mouse') {
@@ -206,7 +206,8 @@ setBaseline = function(mtx, norm_mtx = NULL, coords = NULL, species = 'human', r
     stop("Only 'human' and 'mouse' species are supported at the moment. (Specify with species = 'mouse'")
   }
   initial_weights = initial_weights[abs(initial_weights) > 0.01]
-  em_zonation(mtx, initial_weights, iterations = 10, density_cut = 0, min_cor = regularization, mix_rate = regularization, rigidity = regularization, norm_mtx = norm_mtx, verbose = verbose)
+  mtx = normalizeMatrix(mtx)
+  em_zonation(mtx, initial_weights, iterations = 10, density_cut = 0, min_cor = regularization, mix_rate = regularization, rigidity = regularization, verbose = verbose)
 }
 
 #' Get the pearson correlations between zone scores and genes

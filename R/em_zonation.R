@@ -1,19 +1,11 @@
-em_zonation = function(mtx, init_w, iterations, density_cut, min_cor, mix_rate, rigidity = 1, norm_mtx = NULL, verbose = FALSE) {
-  if (!is.null(norm_mtx)) {
-    if (!identical(dim(norm_mtx), dim(mtx)))
-      stop("norm_mtx must have the same dimensions as mtx")
-    if (!identical(rownames(norm_mtx), rownames(mtx)))
-      stop("norm_mtx must have the same row names (genes) as mtx")
-    if (!identical(colnames(norm_mtx), colnames(mtx)))
-      stop("norm_mtx must have the same column names (cells) as mtx")
-  }
-  rm = Matrix::rowMeans(mtx)
-  raw_var = Matrix::rowMeans(mtx^2) - rm^2
+em_zonation = function(mtx, init_w, iterations, density_cut, min_cor, mix_rate, rigidity = 1, verbose = FALSE) {
+  det_rate = Matrix::rowMeans(mtx != 0)
+  v_norm = Matrix::rowMeans(mtx^2) - Matrix::rowMeans(mtx)^2
+  hvg_score = v_norm * det_rate
   n_hvg = min(2000, nrow(mtx))
-  hvg_idx = order(raw_var, decreasing = TRUE)[1:n_hvg]
+  hvg_idx = order(hvg_score, decreasing = TRUE)[1:n_hvg]
   hvg_names = rownames(mtx)[hvg_idx]
-  mtx_hvg = normalizeMatrix(mtx[hvg_idx, ])
-  mtx_hvg = t(mtx_hvg)
+  mtx_hvg = t(mtx[hvg_idx, ])
   mtx_hvg = scale(mtx_hvg)
   mtx_hvg[is.na(mtx_hvg)] = 0
   n_cells = nrow(mtx_hvg)
@@ -62,11 +54,7 @@ em_zonation = function(mtx, init_w, iterations, density_cut, min_cor, mix_rate, 
       }
     }
   }
-  if (!is.null(norm_mtx)) {
-    mtx_pos = t(norm_mtx)
-  } else {
-    mtx_pos = t(normalizeMatrix(mtx))
-  }
+  mtx_pos = t(mtx)
   g_m = colMeans(mtx_pos)
   mtx_pos = scale(mtx_pos, center = g_m, scale = FALSE)
   v = apply(mtx_pos, 2, var)
@@ -138,6 +126,6 @@ em_zonation = function(mtx, init_w, iterations, density_cut, min_cor, mix_rate, 
     q2 = quantile(pt, 2/3, na.rm = TRUE),
     m1 = m1,
     m3 = m3,
-    norm_provided = !is.null(norm_mtx)
+    norm_provided = TRUE
   ))
 }
