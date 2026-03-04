@@ -1,4 +1,4 @@
-em_zonation = function(mtx, init_w, iterations, density_cut, min_cor, mix_rate, rigidity = 1, verbose = FALSE) {
+em_zonation = function(mtx, init_w, iterations, density_cut, min_cor, mix_rate, rigidity = 1, cor_thresh = 0, verbose = FALSE) {
   det_rate = Matrix::rowMeans(mtx != 0)
   v_norm = Matrix::rowMeans(mtx^2) - Matrix::rowMeans(mtx)^2
   hvg_score = v_norm * det_rate
@@ -96,6 +96,18 @@ em_zonation = function(mtx, init_w, iterations, density_cut, min_cor, mix_rate, 
       w = w_mixed / sqrt(sum(w_mixed^2, na.rm = TRUE))
     }
   }
+  if (cor_thresh > 0) {
+    fr_unfilt = as.vector(mtx_pos %*% w)
+    pt_unfilt = rank(fr_unfilt) / (length(fr_unfilt) + 1)
+    gene_cor = apply(mtx_pos, 2, function(x) cor(x, pt_unfilt, method = "spearman"))
+    sig_genes = names(gene_cor)[abs(gene_cor) > cor_thresh]
+    w[!(names(w) %in% sig_genes)] = 0
+    w = w / sqrt(sum(w^2))
+    if (verbose) {
+      cat(sprintf("Correlation filter (|rho| > %.2f): %d / %d genes retained\n",
+                  cor_thresh, sum(w != 0), length(w)))
+    }
+  }
   fr = as.vector(mtx_pos %*% w)
   d = density(fr, n = 512)
   thresh = max(d$y) * density_cut
@@ -103,18 +115,18 @@ em_zonation = function(mtx, init_w, iterations, density_cut, min_cor, mix_rate, 
   lo = lims_f[1]
   hi = lims_f[2]
   f_ecdf = ecdf(fr)
-  get_sub_model = function(gs, w_vec, m_mtx, f_vec, l_val, h_val) {
+  g1 = names(w)[w < 0]
+  g3 = names(w)[w > 0]
+  get_sub_model = function(gs, w_vec, m_mtx) {
     ws = w_vec
     ws[!(names(w_vec) %in% gs)] = 0
     r = as.vector(m_mtx %*% ws)
-    b = coef(lm(r ~ f_vec))
     e_sub = ecdf(r)
-    list(e = e_sub, rl = e_sub(b[1] + b[2] * l_val), rh = e_sub(b[1] + b[2] * h_val))
+    vals = e_sub(r)
+    list(e = e_sub, e_min = min(vals), e_max = max(vals), genes = gs)
   }
-  g1 = names(w)[w < 0]
-  g3 = names(w)[w > 0]
-  m1 = get_sub_model(g1, w, mtx_pos, fr, lo, hi)
-  m3 = get_sub_model(g3, w, mtx_pos, fr, lo, hi)
+  m1 = get_sub_model(g1, w, mtx_pos)
+  m3 = get_sub_model(g3, w, mtx_pos)
   pt = (f_ecdf(fr) - f_ecdf(lo)) / (f_ecdf(hi) - f_ecdf(lo))
   return(list(
     weights = w,

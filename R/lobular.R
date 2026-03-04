@@ -3,9 +3,20 @@ ZONE_COLORS = c('#504880FF', '#1BB6AFFF', '#FFAD0AFF', '#D72000FF', '#F080D8FF')
 minMaxNorm = function(v) (v - min(v, na.rm = T)) / (max(v, na.rm = T) - min(v, na.rm = T))
 
 normalizeMatrix = function(mtx) {
-  # mtx = t(scale(t(as.matrix(mtx)), center = FALSE))
+  mtx = as.matrix(mtx)
   mtx[is.na(mtx)] = 0
   mtx
+}
+
+getZonationCor = function(mtx, zonation) {
+  cor_results <- t(apply(mtx, 1, function(x) {
+    test <- cor.test(x, zonation, method = "spearman", exact = FALSE)
+    c(rho = test$estimate, pval = test$p.value)
+  }))
+  cor_results <- as.data.frame(cor_results)
+  cor_results$padj <- p.adjust(cor_results$pval, method = "BH")
+  cor_results <- cor_results[order(cor_results$padj), ]
+  cor_results
 }
 
 check_input_consistency = function(mtx, model) {
@@ -42,24 +53,20 @@ predict_position = function(mtx, model) {
 }
 
 predict_position_2d = function(mtx, model) {
-  if (!model$norm_provided) {
-    pred_mtx = normalizeMatrix(mtx)
-  } else {
-    pred_mtx = mtx
-  }
-  g1 = names(model$weights)[model$weights < 0]
-  g3 = names(model$weights)[model$weights > 0]
   pg = predict_position(mtx, model)
-  common_genes = intersect(rownames(mtx), names(model$weights))
-  mtx_c = scale(t(pred_mtx[common_genes, , drop = FALSE]), center = model$gene_means[common_genes], scale = FALSE)
-  gp = function(gs, sub_m) {
-    valid_gs = intersect(gs, common_genes)
-    w_s = model$weights[common_genes]; w_s[!(names(w_s) %in% valid_gs)] = 0
-    raw = as.vector(mtx_c %*% w_s)
-    (sub_m$e(raw) - sub_m$rl) / (sub_m$rh - sub_m$rl)
+  w_sub = if (!is.null(model$weights_unfilt)) model$weights_unfilt else model$weights
+  common = intersect(rownames(mtx), names(w_sub))
+  mtx_c = scale(t(mtx[common, , drop = FALSE]), center = model$gene_means[common], scale = FALSE)
+  gp = function(sub_m) {
+    valid_gs = intersect(sub_m$genes, common)
+    ws = w_sub[common]
+    ws[!(names(ws) %in% valid_gs)] = 0
+    raw = as.vector(mtx_c %*% ws)
+    vals = sub_m$e(raw)
+    (vals - sub_m$e_min) / (sub_m$e_max - sub_m$e_min)
   }
   z = ifelse(pg > model$q2, 'Zone_3', ifelse(pg > model$q1, 'Zone_2', 'Zone_1'))
-  data.frame(ZONE_1 = 1 - gp(g1, model$m1), ZONE_3 = gp(g3, model$m3),
+  data.frame(ZONE_1 = 1 - gp(model$m1), ZONE_3 = gp(model$m3),
              zonation = pg, zone = factor(z, levels = c('Zone_1', 'Zone_2', 'Zone_3')))
 }
 
@@ -171,7 +178,11 @@ apply_transformation = function(new_values, original_values, p = 0) {
 }
 
 getZonationGradient_help = function(mtx, zone_obj) {
-  predict_position(mtx, zone_obj) * 2 + 1
+  if (is.null(attr(zone_obj, 'zonation_gradient'))) {
+    grad = predict_position(mtx, zone_obj) * 2 + 1
+    zone_obj$zonation_gradient = grad
+  }
+  zone_obj$zonation_gradient
 }
 
 #' Obtain an interpolation data frame
@@ -197,7 +208,7 @@ apply_interpolation = function(mtx, coords, zone_obj, resolution = 1) {
 #' @param factor_threshold (Optional) Minimum value for zonation factors to be included in calculation (removes noise).
 #' @return A \code{ZonationObject} with calibrated baseline zonation
 #' @export
-setBaseline = function(mtx, coords = NULL, species = 'human', regularization = 0.8, verbose = FALSE) {
+setBaseline = function(mtx, coords = NULL, species = 'human', regularization = 0.8, filter = 0, verbose = FALSE) {
   if (species == 'human') {
     initial_weights = readRDS(system.file('extdata', 'initial_weights_human.RDS', package = 'lobular'))
   } else if (species == 'mouse') {
@@ -207,7 +218,7 @@ setBaseline = function(mtx, coords = NULL, species = 'human', regularization = 0
   }
   initial_weights = initial_weights[abs(initial_weights) > 0.01]
   mtx = normalizeMatrix(mtx)
-  em_zonation(mtx, initial_weights, iterations = 10, density_cut = 0, min_cor = regularization, mix_rate = regularization, rigidity = regularization, verbose = verbose)
+  em_zonation(mtx, initial_weights, iterations = 10, density_cut = 0, min_cor = regularization, mix_rate = regularization, rigidity = regularization, cor_thresh = filter, verbose = verbose)
 }
 
 #' Get the pearson correlations between zone scores and genes
@@ -276,10 +287,6 @@ plotZonation2d = function(mtx, zone_obj, point_size = 1) {
   ggplot(zone.2d) + geom_point(aes(ZONE_1, ZONE_3, color = zone), size = point_size) + coord_fixed() +
     scale_x_continuous(limits = c(0, 1), expand = c(0,0)) +
     scale_y_continuous(limits = c(0, 1), expand = c(0,0)) +
-    geom_abline(slope = 1, intercept = 1/3, color = '#D72000FF') +
-    geom_abline(slope = 1, intercept = -1/3, color = '#1BB6AFFF') +
-    geom_abline(slope = -1, intercept = 1/3, color = '#504880FF') +
-    geom_abline(slope = -1, intercept = 5/3, color = '#F080D8FF') +
     scale_color_manual(values = ZONE_COLORS, limits = ZONES) +
     labs(x = 'Zone 1 Score', y = 'Zone 3 Score', color = 'Zone') +
     ggdark::dark_theme_grey()
