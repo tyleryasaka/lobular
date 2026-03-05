@@ -1,4 +1,11 @@
-em_zonation = function(mtx, init_w, iterations, density_cut, min_cor, mix_rate, rigidity = 1, cor_thresh = 0, verbose = FALSE) {
+em_zonation = function(mtx, init_w, iterations, density_cut, min_cor, mix_rate, rigidity = 1, cor_thresh = 0, max_cells = 10000, verbose = FALSE) {
+  if (ncol(mtx) > max_cells) {
+    if (verbose) {
+      cat(sprintf("Subsampling %d / %d cells for training\n", max_cells, ncol(mtx)))
+    }
+    idx = sample(ncol(mtx), max_cells)
+    mtx = mtx[, idx]
+  }
   det_rate = Matrix::rowMeans(mtx != 0)
   v_norm = Matrix::rowMeans(mtx^2) - Matrix::rowMeans(mtx)^2
   hvg_score = v_norm * det_rate
@@ -9,7 +16,8 @@ em_zonation = function(mtx, init_w, iterations, density_cut, min_cor, mix_rate, 
   mtx_hvg = scale(mtx_hvg)
   mtx_hvg[is.na(mtx_hvg)] = 0
   n_cells = nrow(mtx_hvg)
-  svd_res = svd(mtx_hvg, nu = 0, nv = min(20, ncol(mtx_hvg)))
+  n_sv = min(20, ncol(mtx_hvg) - 1)
+  svd_res = irlba::irlba(mtx_hvg, nv = n_sv)
   eigenvalues = svd_res$d^2 / (n_cells - 1)
   n_perms = 10
   n_compare = min(20, length(eigenvalues))
@@ -19,7 +27,7 @@ em_zonation = function(mtx, init_w, iterations, density_cut, min_cor, mix_rate, 
       cat(sprintf("Permutation %d/%d\n", p, n_perms))
     }
     mtx_perm = apply(mtx_hvg, 2, sample)
-    sv_perm = svd(mtx_perm, nu = 0, nv = 0)$d
+    sv_perm = irlba::irlba(mtx_perm, nv = n_sv)$d
     null_eigs[p, ] = (sv_perm^2 / (n_cells - 1))[1:n_compare]
   }
   null_threshold = apply(null_eigs, 2, max)
