@@ -211,8 +211,6 @@ apply_interpolation = function(mtx, coords, zone_obj, resolution = 1) {
 setBaseline = function(mtx, coords = NULL, species = 'human', regularization = 0.8, filter = 0, verbose = FALSE) {
   if (species == 'human') {
     initial_weights = readRDS(system.file('extdata', 'initial_weights_human.RDS', package = 'lobular'))
-    print('Initial weights:')
-    print(length(initial_weights))
   } else if (species == 'mouse') {
     initial_weights = readRDS(system.file('extdata', 'initial_weights_mouse.RDS', package = 'lobular'))
   } else {
