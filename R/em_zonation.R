@@ -1,64 +1,60 @@
-em_zonation = function(mtx, init_w, iterations, density_cut, min_cor, mix_rate, rigidity = 1, cor_thresh = 0, max_cells = 10000, verbose = FALSE) {
+em_zonation = function(mtx, init_w, iterations, density_cut, default_reg = 0.9, regularization = NULL, cor_thresh = 0, max_cells = 10000, verbose = FALSE) {
+  if (!is.null(regularization)) {
+    min_cor = mix_rate = rigidity = regularization
+  } else {
+    min_cor = mix_rate = rigidity = default_reg
+  }
   if (ncol(mtx) > max_cells) {
-    if (verbose) {
-      cat(sprintf("Subsampling %d / %d cells for training\n", max_cells, ncol(mtx)))
-    }
+    if (verbose) cat(sprintf("Subsampling %d / %d cells for training\n", max_cells, ncol(mtx)))
     idx = sample(ncol(mtx), max_cells)
     mtx = mtx[, idx]
   }
-  det_rate = Matrix::rowMeans(mtx != 0)
-  v_norm = Matrix::rowMeans(mtx^2) - Matrix::rowMeans(mtx)^2
-  hvg_score = v_norm * det_rate
-  n_hvg = min(2000, nrow(mtx))
-  hvg_idx = order(hvg_score, decreasing = TRUE)[1:n_hvg]
-  hvg_names = rownames(mtx)[hvg_idx]
-  mtx_hvg = t(mtx[hvg_idx, ])
-  mtx_hvg = scale(mtx_hvg)
-  mtx_hvg[is.na(mtx_hvg)] = 0
-  n_cells = nrow(mtx_hvg)
-  n_sv = min(20, ncol(mtx_hvg) - 1)
-  svd_res = irlba::irlba(mtx_hvg, nv = n_sv)
+  mtx_sc = t(mtx)
+  mtx_sc = scale(mtx_sc)
+  mtx_sc[is.na(mtx_sc)] = 0
+  n_cells = nrow(mtx_sc)
+  n_genes = ncol(mtx_sc)
+  n_sv = min(20, n_genes - 1)
+  svd_res = irlba::irlba(mtx_sc, nv = n_sv)
   eigenvalues = svd_res$d^2 / (n_cells - 1)
-  n_perms = 10
-  n_compare = min(20, length(eigenvalues))
-  null_eigs = matrix(0, n_perms, n_compare)
-  for (p in 1:n_perms) {
-    if (verbose) {
-      cat(sprintf("Permutation %d/%d\n", p, n_perms))
-    }
-    mtx_perm = apply(mtx_hvg, 2, sample)
-    sv_perm = irlba::irlba(mtx_perm, nv = n_sv)$d
-    null_eigs[p, ] = (sv_perm^2 / (n_cells - 1))[1:n_compare]
-  }
-  null_threshold = apply(null_eigs, 2, max)
-  n_signals = 0
-  for (j in 1:n_compare) {
-    if (eigenvalues[j] > null_threshold[j]) n_signals = j
-    else break
-  }
+  gamma = n_genes / n_cells
+  mp_upper = (1 + sqrt(gamma))^2
+  n_signals = sum(eigenvalues > mp_upper)
   if (verbose) {
-    cat(sprintf("Parallel analysis (%d HVGs): %d signals detected\n", n_hvg, n_signals))
+    cat(sprintf("Parallel analysis (%d genes): %d signals detected (MP upper: %.2f)\n", n_genes, n_signals, mp_upper))
     cat(sprintf("Top 5 eigenvalues: %s\n", paste(round(eigenvalues[1:min(5, length(eigenvalues))], 2), collapse = ", ")))
-    cat(sprintf("Top 5 null thresholds: %s\n", paste(round(null_threshold[1:min(5, n_compare)], 2), collapse = ", ")))
   }
   signal_genes_filtered = NULL
   if (n_signals > 0) {
     V = svd_res$v[, 1:n_signals, drop = FALSE]
-    rownames(V) = hvg_names
+    rownames(V) = colnames(mtx_sc)
     max_loading = apply(V^2, 1, max)
-    null_loading = 1 / n_hvg
-    init_in_hvg = intersect(names(init_w)[init_w != 0], hvg_names)
-    if (length(init_in_hvg) > 0) {
-      init_loading = max_loading[init_in_hvg]
+    null_loading = 1 / n_genes
+    init_in_mtx = intersect(names(init_w)[init_w != 0], colnames(mtx_sc))
+    if (length(init_in_mtx) > 0) {
+      init_loading = max_loading[init_in_mtx]
       if (verbose) {
         cat(sprintf("Init gene max PC loading - min: %.4f, median: %.4f, max: %.4f (null: %.4f)\n",
                     min(init_loading), median(init_loading), max(init_loading), null_loading))
+        cat(sprintf("Init genes passing signal filter: %d / %d\n", sum(init_loading > null_loading * 2), length(init_in_mtx)))
       }
       signal_genes_filtered = names(init_loading)[init_loading > null_loading * 2]
-      init_not_hvg = setdiff(names(init_w)[init_w != 0], hvg_names)
+    }
+    common_sv = intersect(rownames(V), names(init_w))
+    if (length(common_sv) > 0) {
+      iw = init_w[common_sv]
+      pc_cors = sapply(1:n_signals, function(k) {
+        cor(V[common_sv, k], iw, method = "pearson")
+      })
       if (verbose) {
-        cat(sprintf("Init genes in HVGs: %d, not in HVGs: %d\n", length(init_in_hvg), length(init_not_hvg)))
-        cat(sprintf("Init genes passing signal filter: %d / %d\n", length(signal_genes_filtered), length(init_in_hvg)))
+        cat("PC correlations with init weights:\n")
+        for (k in 1:n_signals) {
+          cat(sprintf("  PC%d (eigenvalue %.2f): rho = %.3f\n", k, eigenvalues[k], pc_cors[k]))
+        }
+      }
+      if (n_signals == 1 && is.null(regularization)) {
+        min_cor = mix_rate = rigidity = 0.5
+        if (verbose) cat("Only 1 signal detected, relaxing regularization.\n")
       }
     }
   }

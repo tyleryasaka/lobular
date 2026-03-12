@@ -211,14 +211,16 @@ apply_interpolation = function(mtx, coords, zone_obj, resolution = 1) {
 setBaseline = function(mtx, coords = NULL, species = 'human', regularization = 0.8, filter = 0, verbose = FALSE) {
   if (species == 'human') {
     initial_weights = readRDS(system.file('extdata', 'initial_weights_human.RDS', package = 'lobular'))
+    print('Initial weights:')
+    print(length(initial_weights))
   } else if (species == 'mouse') {
     initial_weights = readRDS(system.file('extdata', 'initial_weights_mouse.RDS', package = 'lobular'))
   } else {
     stop("Only 'human' and 'mouse' species are supported at the moment. (Specify with species = 'mouse'")
   }
-  initial_weights = initial_weights[abs(initial_weights) > 0.01]
+  initial_weights = head(initial_weights[order(abs(initial_weights), decreasing = T)], 500)
   mtx = normalizeMatrix(mtx)
-  em_zonation(mtx, initial_weights, iterations = 10, density_cut = 0, min_cor = regularization, mix_rate = regularization, rigidity = regularization, cor_thresh = filter, verbose = verbose)
+  em_zonation(mtx, initial_weights, iterations = 10, density_cut = 0, default_reg = regularization, cor_thresh = filter, verbose = verbose)
 }
 
 #' Get the pearson correlations between zone scores and genes
