@@ -4,6 +4,7 @@ em_zonation = function(mtx, init_w, iterations, density_cut, default_reg = 0.9, 
   } else {
     min_cor = mix_rate = rigidity = default_reg
   }
+  mtx_original = mtx
   if (ncol(mtx) > max_cells) {
     if (verbose) cat(sprintf("Subsampling %d / %d cells for training\n", max_cells, ncol(mtx)))
     idx = sample(ncol(mtx), max_cells)
@@ -142,6 +143,7 @@ em_zonation = function(mtx, init_w, iterations, density_cut, default_reg = 0.9, 
     q2 = quantile(pt, 2/3, na.rm = TRUE),
     m1 = m1,
     m3 = m3,
-    norm_provided = TRUE
+    mtx = mtx_original,
+    obj_id = paste0(sample(c(0:9, letters[1:6]), 16, replace = TRUE), collapse = "")
   ))
 }

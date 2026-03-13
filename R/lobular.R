@@ -1,6 +1,18 @@
 ZONES = c('Zone_1', 'Zone_2', 'Zone_3')
 ZONE_COLORS = c('#504880FF', '#1BB6AFFF', '#FFAD0AFF', '#D72000FF', '#F080D8FF')
 minMaxNorm = function(v) (v - min(v, na.rm = T)) / (max(v, na.rm = T) - min(v, na.rm = T))
+.lobular_cache = new.env(parent = emptyenv())
+
+access_cache = function(zone_obj, prop, fn) {
+  id = zone_obj$obj_id
+  if (is.null(.lobular_cache[[id]])) {
+    .lobular_cache[[id]] = new.env(parent = emptyenv())
+  }
+  if (is.null(.lobular_cache[[id]][[prop]])) {
+    .lobular_cache[[id]][[prop]] = fn()
+  }
+  .lobular_cache[[id]][[prop]]
+}
 
 normalizeMatrix = function(mtx) {
   mtx = as.matrix(mtx)
@@ -19,55 +31,51 @@ getZonationCor = function(mtx, zonation) {
   cor_results
 }
 
-check_input_consistency = function(mtx, model) {
+check_input_consistency = function(model) {
+  mtx = model$mtx
   common = intersect(rownames(mtx), names(model$gene_means))
   if (length(common) == 0) stop("No genes in common between mtx and model")
   input_means = rowMeans(mtx[common, , drop = FALSE])
   stored_means = model$gene_means[common]
-  if (model$norm_provided) {
-    if (all(mtx[common, ] == floor(mtx[common, ]), na.rm = TRUE))
-      warning("Model was trained with user-provided normalized data, but mtx appears to contain only integers. Did you pass raw counts?")
-  } else {
-    if (!all(mtx[common, ] == floor(mtx[common, ]), na.rm = TRUE))
-      warning("Model was trained without normalized data (expects raw counts), but mtx contains non-integer values.")
-  }
   ratio = median(abs(input_means), na.rm = TRUE) / median(abs(stored_means), na.rm = TRUE)
   if (ratio > 10 || ratio < 0.1)
     warning(sprintf("Input gene means differ from training gene means by ~%.0fx. Check that mtx is on the expected scale.", ratio))
 }
 
-predict_position = function(mtx, model) {
-  check_input_consistency(mtx, model)
-  if (!model$norm_provided) {
-    pred_mtx = normalizeMatrix(mtx)
-  } else {
+predict_position = function(model) {
+  access_cache(model, 'predict_position', function() {
+    mtx = model$mtx
+    check_input_consistency(model)
     pred_mtx = mtx
-  }
-  common_genes = intersect(rownames(pred_mtx), names(model$weights))
-  pred_mtx = pred_mtx[common_genes, , drop = FALSE]
-  pred_mtx = scale(t(pred_mtx), center = model$gene_means[common_genes], scale = FALSE)
-  w_s = model$weights[common_genes]
-  if(length(w_s) > 0) w_s = w_s / sqrt(sum(w_s^2))
-  raw = as.vector(pred_mtx %*% w_s)
-  (model$f_e(raw) - model$f_rl) / (model$f_rh - model$f_rl)
+    common_genes = intersect(rownames(pred_mtx), names(model$weights))
+    pred_mtx = pred_mtx[common_genes, , drop = FALSE]
+    pred_mtx = scale(t(pred_mtx), center = model$gene_means[common_genes], scale = FALSE)
+    w_s = model$weights[common_genes]
+    if(length(w_s) > 0) w_s = w_s / sqrt(sum(w_s^2))
+    raw = as.vector(pred_mtx %*% w_s)
+    (model$f_e(raw) - model$f_rl) / (model$f_rh - model$f_rl)
+  })
 }
 
-predict_position_2d = function(mtx, model) {
-  pg = predict_position(mtx, model)
-  w_sub = if (!is.null(model$weights_unfilt)) model$weights_unfilt else model$weights
-  common = intersect(rownames(mtx), names(w_sub))
-  mtx_c = scale(t(mtx[common, , drop = FALSE]), center = model$gene_means[common], scale = FALSE)
-  gp = function(sub_m) {
-    valid_gs = intersect(sub_m$genes, common)
-    ws = w_sub[common]
-    ws[!(names(ws) %in% valid_gs)] = 0
-    raw = as.vector(mtx_c %*% ws)
-    vals = sub_m$e(raw)
-    (vals - sub_m$e_min) / (sub_m$e_max - sub_m$e_min)
-  }
-  z = ifelse(pg > model$q2, 'Zone_3', ifelse(pg > model$q1, 'Zone_2', 'Zone_1'))
-  data.frame(ZONE_1 = 1 - gp(model$m1), ZONE_3 = gp(model$m3),
-             zonation = pg, zone = factor(z, levels = c('Zone_1', 'Zone_2', 'Zone_3')))
+predict_position_2d = function(model) {
+  access_cache(model, 'predict_position_2d', function() {
+    mtx = model$mtx
+    pg = predict_position(model)
+    w_sub = if (!is.null(model$weights_unfilt)) model$weights_unfilt else model$weights
+    common = intersect(rownames(mtx), names(w_sub))
+    mtx_c = scale(t(mtx[common, , drop = FALSE]), center = model$gene_means[common], scale = FALSE)
+    gp = function(sub_m) {
+      valid_gs = intersect(sub_m$genes, common)
+      ws = w_sub[common]
+      ws[!(names(ws) %in% valid_gs)] = 0
+      raw = as.vector(mtx_c %*% ws)
+      vals = sub_m$e(raw)
+      (vals - sub_m$e_min) / (sub_m$e_max - sub_m$e_min)
+    }
+    z = ifelse(pg > model$q2, 'Zone_3', ifelse(pg > model$q1, 'Zone_2', 'Zone_1'))
+    data.frame(ZONE_1 = 1 - gp(model$m1), ZONE_3 = gp(model$m3),
+               zonation = pg, zone = factor(z, levels = c('Zone_1', 'Zone_2', 'Zone_3')))
+  })
 }
 
 #' Create a Zonation Object
@@ -177,12 +185,8 @@ apply_transformation = function(new_values, original_values, p = 0) {
   approx(u, (seq_along(u) - 1) / max(1, n - 1), xout = new_values, rule = 2)$y
 }
 
-getZonationGradient_help = function(mtx, zone_obj) {
-  if (is.null(attr(zone_obj, 'zonation_gradient'))) {
-    grad = predict_position(mtx, zone_obj) * 2 + 1
-    zone_obj$zonation_gradient = grad
-  }
-  zone_obj$zonation_gradient
+getZonationGradient_help = function(zone_obj) {
+  predict_position(zone_obj) * 2 + 1
 }
 
 #' Obtain an interpolation data frame
@@ -208,7 +212,7 @@ apply_interpolation = function(mtx, coords, zone_obj, resolution = 1) {
 #' @param factor_threshold (Optional) Minimum value for zonation factors to be included in calculation (removes noise).
 #' @return A \code{ZonationObject} with calibrated baseline zonation
 #' @export
-setBaseline = function(mtx, coords = NULL, species = 'human', regularization = 0.8, filter = 0, verbose = FALSE) {
+trainModel = function(mtx, coords = NULL, species = 'human', regularization = 0.8, filter = 0, verbose = FALSE) {
   if (species == 'human') {
     initial_weights = readRDS(system.file('extdata', 'initial_weights_human.RDS', package = 'lobular'))
   } else if (species == 'mouse') {
@@ -219,6 +223,12 @@ setBaseline = function(mtx, coords = NULL, species = 'human', regularization = 0
   initial_weights = head(initial_weights[order(abs(initial_weights), decreasing = T)], 500)
   mtx = normalizeMatrix(mtx)
   em_zonation(mtx, initial_weights, iterations = 10, density_cut = 0, default_reg = regularization, cor_thresh = filter, verbose = verbose)
+}
+
+applyModel = function(mtx, zone_obj) {
+  zone_obj$mtx = normalizeMatrix(mtx)
+  zone_obj$obj_id = paste0(sample(c(0:9, letters[1:6]), 16, replace = TRUE), collapse = "")
+  zone_obj
 }
 
 #' Get the pearson correlations between zone scores and genes
@@ -237,9 +247,8 @@ getGeneZonation = function(zone_obj) {
 #' @param zone_obj Calibrated Zonation Object
 #' @return A vector of numeric zonation assignments (continuous)
 #' @export
-getZonationGradient = function(mtx, zone_obj) {
-  mtx = normalizeMatrix(mtx)
-  getZonationGradient_help(mtx, zone_obj)
+getZonationGradient = function(zone_obj) {
+  getZonationGradient_help(zone_obj)
 }
 
 #' Apply the model to new samples, returning the zonation per cell/spot as discrete bins (1, 2, or 3)
@@ -248,17 +257,18 @@ getZonationGradient = function(mtx, zone_obj) {
 #' @param zone_obj Calibrated Zonation Object
 #' @return A vector of zonation assignments (discrete)
 #' @export
-getZone = function(mtx, zone_obj) {
-  mtx = normalizeMatrix(mtx)
-  zonescore = predict_position(mtx, zone_obj)
+getZone = function(zone_obj) {
+  mtx = zone_obj$mtx
+  zonescore = predict_position(zone_obj)
   zone = ifelse(zonescore < (1 / 3), 'Zone_1', ifelse(zonescore < (2 / 3), 'Zone_2', 'Zone_3'))
   zone = factor(zone, levels = ZONES)
   names(zone) = colnames(mtx)
   zone
 }
 
-getZonation2d_help = function(mtx, zone_obj) {
-  zone.2d = predict_position_2d(mtx, zone_obj)
+getZonation2d_help = function(zone_obj) {
+  mtx = zone_obj$mtx
+  zone.2d = predict_position_2d(zone_obj)
   rownames(zone.2d) = colnames(mtx)
   zone.2d
 }
@@ -269,9 +279,8 @@ getZonation2d_help = function(mtx, zone_obj) {
 #' @param zone_obj Calibrated Zonation Object
 #' @return A dataframe with columns PV, CV, and zone
 #' @export
-getZonation2d = function(mtx, zone_obj) {
-  mtx = normalizeMatrix(mtx)
-  getZonation2d_help(mtx, zone_obj)
+getZonation2d = function(zone_obj) {
+  getZonation2d_help(zone_obj)
 }
 
 #' Apply the model to new samples, returning a plot of the 2d zonation per cell/spot with *zone* indicated by the color
@@ -281,15 +290,13 @@ getZonation2d = function(mtx, zone_obj) {
 #' @param point_size Optional numeric value for the ggplot point size (default 1)
 #' @return A ggplot object
 #' @export
-plotZonation2d = function(mtx, zone_obj, point_size = 1) {
-  mtx = normalizeMatrix(mtx)
-  zone.2d = getZonation2d_help(mtx, zone_obj)
+plotZonation2d = function(zone_obj, point_size = 1) {
+  zone.2d = getZonation2d_help(zone_obj)
   ggplot(zone.2d) + geom_point(aes(ZONE_1, ZONE_3, color = zone), size = point_size) + coord_fixed() +
     scale_x_continuous(limits = c(0, 1), expand = c(0,0)) +
     scale_y_continuous(limits = c(0, 1), expand = c(0,0)) +
     scale_color_manual(values = ZONE_COLORS, limits = ZONES) +
-    labs(x = 'Zone 1 Score', y = 'Zone 3 Score', color = 'Zone') +
-    ggdark::dark_theme_grey()
+    labs(x = 'Zone 1 Score', y = 'Zone 3 Score', color = 'Zone')
 }
 
 #' Apply the model to new samples, returning a plot of the 2d zonation per cell/spot with *zone 2 score* indicated by the color. Only supported for mouse (no human zone 2 genes).
@@ -299,12 +306,11 @@ plotZonation2d = function(mtx, zone_obj, point_size = 1) {
 #' @param point_size Optional numeric value for the ggplot point size (default 1)
 #' @return A ggplot object
 #' @export
-plotZonation2d_2 = function(mtx, zone_obj, point_size = 1) {
+plotZonation2d_2 = function(zone_obj, point_size = 1) {
   if (zone_obj$species != 'mouse') {
     stop(paste0("This plot is not available for ", zone_obj$species, ", as there are no zone 2 reference genes."))
   }
-  mtx = normalizeMatrix(mtx)
-  zone.2d = getZonation2d_help(mtx, zone_obj)
+  zone.2d = getZonation2d_help(zone_obj)
   ggplot(zone.2d) + geom_point(aes(ZONE_1, ZONE_3, color = ZONE_2), size = point_size) + coord_fixed() +
     scale_x_continuous(limits = c(0, 1), expand = c(0,0)) +
     scale_y_continuous(limits = c(0, 1), expand = c(0,0)) +
@@ -323,16 +329,15 @@ plotZonation2d_2 = function(mtx, zone_obj, point_size = 1) {
 #' @param point_size Optional numeric value for the ggplot point size (default 1)
 #' @return A ggplot object
 #' @export
-plotZonation2dGene = function(mtx, zone_obj, gene, point_size = 1) {
-  mtx = normalizeMatrix(mtx)
-  zone.2d = getZonation2d_help(mtx, zone_obj)
+plotZonation2dGene = function(zone_obj, gene, point_size = 1) {
+  mtx = zone_obj$mtx
+  zone.2d = getZonation2d_help(zone_obj)
   zone.2d[,gene] = mtx[gene,]
   ggplot(zone.2d) + geom_point(aes(ZONE_1, ZONE_3, color = .data[[gene]]), size = point_size) + coord_fixed() +
     scale_x_continuous(limits = c(0, 1), expand = c(0,0)) +
     scale_y_continuous(limits = c(0, 1), expand = c(0,0)) +
     scale_color_viridis_c() +
-    labs(x = 'Zone 1 Score', y = 'Zone 3 Score', color = gene) +
-    ggdark::dark_theme_grey()
+    labs(x = 'Zone 1 Score', y = 'Zone 3 Score', color = gene)
 }
 
 #' Apply the model to new samples, returning a ridge plot of gene expression along zonation axis
@@ -342,15 +347,14 @@ plotZonation2dGene = function(mtx, zone_obj, gene, point_size = 1) {
 #' @param gene Name of gene to plot
 #' @return A ggplot object
 #' @export
-plotRegression = function(mtx, zone_obj, gene) {
-  mtx = normalizeMatrix(mtx)
-  zone.2d = getZonation2d_help(mtx, zone_obj)
+plotRegression = function(zone_obj, gene) {
+  mtx = zone_obj$mtx
+  zone.2d = getZonation2d_help(zone_obj)
   zone.2d[,gene] = mtx[gene,]
   ggplot(zone.2d, aes(x = zonation, y = .data[[gene]])) +
     geom_point(color = '#504880FF') +
     geom_smooth(method = "lm", formula = y ~ poly(x, 3), se = TRUE, color = "#F080D8FF", fill  = "#C8C0F8FF") +
-    xlab('Zonation') +
-    ggdark::dark_theme_classic()
+    xlab('Zonation')
 }
 
 #' Apply the model to new samples, returning a ridge plot of the scores for zones 1, 2, and 3
@@ -359,9 +363,8 @@ plotRegression = function(mtx, zone_obj, gene) {
 #' @param zone_obj Calibrated Zonation Object
 #' @return A ggplot object
 #' @export
-plotZonationRidge = function(mtx, zone_obj) {
-  mtx = normalizeMatrix(mtx)
-  zone.2d = getZonation2d_help(mtx, zone_obj)
+plotZonationRidge = function(zone_obj) {
+  zone.2d = getZonation2d_help(zone_obj)
   zone.2d.long <- zone.2d[,1:3] %>%
     tidyr::pivot_longer(cols = c(ZONE_1, ZONE_2, ZONE_3),
                   names_to = 'Zone',
@@ -380,9 +383,8 @@ plotZonationRidge = function(mtx, zone_obj) {
 #' @param zone_obj Calibrated Zonation Object
 #' @return A ggplot object
 #' @export
-plotPolarity = function(mtx, zone_obj) {
-  mtx = normalizeMatrix(mtx)
-  zone.2d = getZonation2d_help(mtx, zone_obj)
+plotPolarity = function(zone_obj) {
+  zone.2d = getZonation2d_help(zone_obj)
   polarity = -1 * cor(zone.2d$ZONE_1, zone.2d$ZONE_3)
   bins = 9
   brks = seq(0, 1, length.out = bins + 1)
@@ -407,8 +409,7 @@ plotPolarity = function(mtx, zone_obj) {
     labs(x = 'Portal Score', y = 'Central Score', fill = 'Count') +
     geom_abline(slope = -1 * polarity, intercept = 0.5 + polarity * 0.5, color = '#fcfdbf') +
     geom_text(aes(x = 0.5, y = 0.5, label = round(polarity, 2)),
-                angle = atan(-1 * polarity) * 180 / pi, vjust = -1, color = '#fcfdbf', size = 8) +
-    ggdark::dark_theme_classic()
+                angle = atan(-1 * polarity) * 180 / pi, vjust = -1, color = '#fcfdbf', size = 8)
 }
 
 #' Generate a plot of the "diff" or breakdown of differential expression of zonated genes between 2 samples
@@ -484,8 +485,8 @@ plotZonationDiff = function(mtx_1, mtx_2, zone_obj, zone, threshold = 0.1, font_
 #' @param use_for_inference (optional) A vector of sample names which should be used for zonation inference (recommended to use only hepatocytes, if annotation is available). If not provided, all samples will be used.
 #' @return A vector of zonation assignments (discrete) for all samples
 #' @export
-getZoneSpatial = function(mtx, coords, zone_obj, resolution = 1, use_for_inference = NULL) {
-  mtx = normalizeMatrix(mtx)
+getZoneSpatial = function(coords, zone_obj, resolution = 1, use_for_inference = NULL) {
+  mtx = zone_obj$mtx
   coords = data.frame(coords)
   scale_factor = zone_obj$scale_factor
   if (scale_factor > 1) {
@@ -536,8 +537,8 @@ getZoneSpatial = function(mtx, coords, zone_obj, resolution = 1, use_for_inferen
 #' @param use_for_inference (optional) A vector of sample names which should be used for zonation inference (recommended to use only hepatocytes, if annotation is available). If not provided, all samples will be used.
 #' @return A ggplot object
 #' @export
-plotZoneSpatial = function(mtx, coords, zone_obj, resolution = 1, use_for_inference = NULL) {
-  mtx = normalizeMatrix(mtx)
+plotZoneSpatial = function(coords, zone_obj, resolution = 1, use_for_inference = NULL) {
+  mtx = zone_obj$mtx
   coords = data.frame(coords)
   scale_factor = zone_obj$scale_factor
   if (scale_factor > 1) {
@@ -581,8 +582,8 @@ plotZoneSpatial = function(mtx, coords, zone_obj, resolution = 1, use_for_infere
 #' @param use_for_inference (optional) A vector of sample names which should be used for zonation inference (recommended to use only hepatocytes, if annotation is available). If not provided, all samples will be used.
 #' @return A ggplot object
 #' @export
-plotZoneSpatialContours = function(mtx, coords, zone_obj, resolution = 1, point_size = 1, line_width = 2, plot_options = NULL, use_for_inference = NULL) {
-  mtx = normalizeMatrix(mtx)
+plotZoneSpatialContours = function(coords, zone_obj, resolution = 1, point_size = 1, line_width = 2, plot_options = NULL, use_for_inference = NULL) {
+  mtx = zone_obj$mtx
   coords = data.frame(coords)
   scale_factor = zone_obj$scale_factor
   if (scale_factor > 1) {
@@ -637,8 +638,8 @@ plotZoneSpatialContours = function(mtx, coords, zone_obj, resolution = 1, point_
 #' @param use_for_inference (optional) A vector of sample names which should be used for zonation inference (recommended to use only hepatocytes, if annotation is available). If not provided, all samples will be used.
 #' @return A ggplot object
 #' @export
-plotZoneSpatialCustom = function(mtx, meta, col_name, zone_obj, resolution = 1, point_size = 1, use_for_inference = NULL) {
-  mtx = normalizeMatrix(mtx)
+plotZoneSpatialCustom = function(meta, col_name, zone_obj, resolution = 1, point_size = 1, use_for_inference = NULL) {
+  mtx = zone_obj$mtx
   meta = data.frame(meta)
   scale_factor = zone_obj$scale_factor
   if (scale_factor > 1) {
