@@ -1,9 +1,5 @@
-em_zonation = function(mtx, init_w, iterations, density_cut, default_reg = 0.9, regularization = NULL, cor_thresh = 0, max_cells = 10000, verbose = FALSE) {
-  if (!is.null(regularization)) {
-    min_cor = mix_rate = rigidity = regularization
-  } else {
-    min_cor = mix_rate = rigidity = default_reg
-  }
+em_zonation = function(mtx, init_w, iterations, density_cut, regularization, cor_thresh = 0, max_cells = 10000, verbose = FALSE) {
+  min_cor = mix_rate = rigidity = regularization
   mtx_original = mtx
   if (ncol(mtx) > max_cells) {
     if (verbose) cat(sprintf("Subsampling %d / %d cells for training\n", max_cells, ncol(mtx)))
@@ -144,6 +140,6 @@ em_zonation = function(mtx, init_w, iterations, density_cut, default_reg = 0.9, 
     m1 = m1,
     m3 = m3,
     mtx = mtx_original,
-    obj_id = paste0(sample(c(0:9, letters[1:6]), 16, replace = TRUE), collapse = "")
+    obj_id = next_obj_id()
   ))
 }

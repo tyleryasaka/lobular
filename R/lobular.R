@@ -2,6 +2,13 @@ ZONES = c('Zone_1', 'Zone_2', 'Zone_3')
 ZONE_COLORS = c('#504880FF', '#1BB6AFFF', '#FFAD0AFF', '#D72000FF', '#F080D8FF')
 minMaxNorm = function(v) (v - min(v, na.rm = T)) / (max(v, na.rm = T) - min(v, na.rm = T))
 .lobular_cache = new.env(parent = emptyenv())
+.obj_id_counter = new.env(parent = emptyenv())
+.obj_id_counter$n = 0L
+
+next_obj_id = function() {
+  .obj_id_counter$n <- .obj_id_counter$n + 1L
+  as.character(.obj_id_counter$n)
+}
 
 access_cache = function(zone_obj, prop, fn) {
   id = zone_obj$obj_id
@@ -212,7 +219,7 @@ apply_interpolation = function(mtx, coords, zone_obj, resolution = 1) {
 #' @param factor_threshold (Optional) Minimum value for zonation factors to be included in calculation (removes noise).
 #' @return A \code{ZonationObject} with calibrated baseline zonation
 #' @export
-trainModel = function(mtx, coords = NULL, species = 'human', regularization = 0.8, filter = 0, verbose = FALSE) {
+trainModel = function(mtx, coords = NULL, species = 'human', regularization = 1, filter = 0, verbose = FALSE) {
   if (species == 'human') {
     initial_weights = readRDS(system.file('extdata', 'initial_weights_human.RDS', package = 'lobular'))
   } else if (species == 'mouse') {
@@ -222,12 +229,12 @@ trainModel = function(mtx, coords = NULL, species = 'human', regularization = 0.
   }
   initial_weights = head(initial_weights[order(abs(initial_weights), decreasing = T)], 500)
   mtx = normalizeMatrix(mtx)
-  em_zonation(mtx, initial_weights, iterations = 10, density_cut = 0, default_reg = regularization, cor_thresh = filter, verbose = verbose)
+  em_zonation(mtx, initial_weights, iterations = 10, density_cut = 0, regularization = regularization, cor_thresh = filter, verbose = verbose)
 }
 
 applyModel = function(mtx, zone_obj) {
   zone_obj$mtx = normalizeMatrix(mtx)
-  zone_obj$obj_id = paste0(sample(c(0:9, letters[1:6]), 16, replace = TRUE), collapse = "")
+  zone_obj$obj_id = next_obj_id()
   zone_obj
 }
 
