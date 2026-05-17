@@ -364,26 +364,6 @@ plotRegression = function(zone_obj, gene) {
     xlab('Zonation')
 }
 
-#' Apply the model to new samples, returning a ridge plot of the scores for zones 1, 2, and 3
-#'
-#' @param mtx Gene expression matrix with genes as rows
-#' @param zone_obj Calibrated Zonation Object
-#' @return A ggplot object
-#' @export
-plotZonationRidge = function(zone_obj) {
-  zone.2d = getZonation2d_help(zone_obj)
-  zone.2d.long <- zone.2d[,1:3] %>%
-    tidyr::pivot_longer(cols = c(ZONE_1, ZONE_2, ZONE_3),
-                  names_to = 'Zone',
-                  values_to = 'Value')
-  zone.2d.long$Zone = factor(zone.2d.long$Zone, levels = c('ZONE_3', 'ZONE_2', 'ZONE_1'))
-  ggplot(zone.2d.long, aes(x = Value, y = Zone, fill = Zone)) +
-    ggridges::geom_density_ridges(scale = 1.2, rel_min_height = 0.01) +
-    scale_fill_manual(values = c('#1BB6AFFF', '#FFAD0AFF', '#D72000FF')) +
-    ggdark::dark_theme_classic() +
-    theme(legend.position = 'none')
-}
-
 #' Apply the model to new samples, returning a density plot of the 2d zonation per cell/spot. For visualizing zonation polarity.
 #'
 #' @param mtx Gene expression matrix with genes as rows
@@ -684,4 +664,164 @@ plotZoneSpatialCustom = function(meta, col_name, zone_obj, resolution = 1, point
                 color = 'black',
                 linewidth = 2) +
     coord_fixed()
+}
+
+#' Plot a virtual lobule of the inferred zonation distribution
+#'
+#' Visualizes the distribution of inferred zonation within an idealized
+#' hexagonal lobule. Each pixel is placed according to its rank along the
+#' corner-to-center axis (0 = nearest corner / Zone 1, 1 = center / Zone 3)
+#' and colored by the matching quantile of \code{getZonationGradient(zone_obj)}.
+#'
+#' @param zone_obj A calibrated Zonation Object (output of \code{applyModel}).
+#' @param resolution Integer pixel resolution along the x-axis (default 100).
+#' @param palette Character; a \pkg{paletteer} continuous palette name
+#' @param reverse_palette Logical; reverse palette direction (default FALSE).
+#' @param pointy_top Logical; if TRUE the hexagon has a vertex at the top,
+#'   otherwise it is flat-topped (default FALSE, matching \code{virtual_lobule}).
+#' @param show_legend Logical; show the colour legend (default TRUE).
+#' @param seed Optional integer for reproducibility. Not strictly required
+#'   here (the mapping is deterministic), but kept for API symmetry with
+#'   \code{virtual_lobule}.
+#' @return A ggplot object.
+#' @export
+plotVirtualLobule <- function(zone_obj,
+                              resolution = 100,
+                              palette = "ggthemes::Classic Red-Blue",
+                              reverse_palette = T,
+                              pointy_top = FALSE,
+                              show_legend = TRUE,
+                              seed = NULL) {
+
+  if (!is.null(seed)) set.seed(seed)
+
+  # --- 0. Pull the inferred zonation gradient (values on [1, 3]) ---
+  zonation <- getZonationGradient(zone_obj)
+  zonation <- zonation[is.finite(zonation)]
+  if (length(zonation) == 0) {
+    stop("No finite zonation values from getZonationGradient(zone_obj).")
+  }
+
+  # --- 1. Hexagon geometry ---
+  R <- 1
+  angle_offset <- if (pointy_top) pi / 6 else 0
+  vertex_angles <- angle_offset + (0:5) * pi / 3
+  vertices_x <- R * cos(vertex_angles)
+  vertices_y <- R * sin(vertex_angles)
+
+  # --- 2. Pixel grid ---
+  x_range <- range(vertices_x)
+  y_range <- range(vertices_y)
+  pixel_size <- diff(x_range) / resolution
+
+  x_seq <- seq(x_range[1] + pixel_size / 2, x_range[2] - pixel_size / 2, by = pixel_size)
+  y_seq <- seq(y_range[1] + pixel_size / 2, y_range[2] - pixel_size / 2, by = pixel_size)
+  grid <- expand.grid(x = x_seq, y = y_seq)
+
+  # --- 3. Point-in-hexagon test (cross-product against CCW edges) ---
+  inside <- rep(TRUE, nrow(grid))
+  for (i in 1:6) {
+    j <- (i %% 6) + 1
+    ex <- vertices_x[j] - vertices_x[i]
+    ey <- vertices_y[j] - vertices_y[i]
+    cross <- ex * (grid$y - vertices_y[i]) - ey * (grid$x - vertices_x[i])
+    inside <- inside & (cross >= 0)
+  }
+  grid <- grid[inside, , drop = FALSE]
+  if (nrow(grid) == 0) stop("No pixels inside hexagon. Increase resolution.")
+
+  # --- 4. Position: 0 = nearest corner (portal), 1 = center (central) ---
+  d_center <- sqrt(grid$x^2 + grid$y^2)
+  d_nearest_corner <- do.call(pmin, lapply(seq_len(6), function(i) {
+    sqrt((grid$x - vertices_x[i])^2 + (grid$y - vertices_y[i])^2)
+  }))
+  raw_pos <- d_nearest_corner / (d_nearest_corner + d_center)
+  raw_pos[d_center < 1e-12] <- 1
+
+  # Rank-normalise pixel positions to a uniform [0, 1] distribution
+  r <- rank(raw_pos, ties.method = "average")
+  grid$position <- (r - min(r)) / (max(r) - min(r))
+
+  # --- 5. Map each pixel to the matching quantile of the zonation gradient ---
+  grid$zonation <- as.numeric(stats::quantile(
+    zonation,
+    probs = grid$position,
+    na.rm = TRUE,
+    names = FALSE,
+    type  = 7
+  ))
+
+  # --- 6. Colour palette ---
+  n_colors <- 256
+  pal_colors <- tryCatch(
+    as.character(paletteer::paletteer_c(palette, n = n_colors)),
+    error = function(e) as.character(paletteer::paletteer_d(palette))
+  )
+  if (reverse_palette) pal_colors <- rev(pal_colors)
+
+  # --- 7. ggplot ---
+  ggplot2::ggplot(grid, ggplot2::aes(x = x, y = y, fill = zonation)) +
+    ggplot2::geom_tile(width = pixel_size, height = pixel_size) +
+    ggplot2::scale_fill_gradientn(
+      colours  = pal_colors,
+      limits   = c(1, 3),
+      oob      = scales::squish,
+      na.value = "grey50",
+      name     = "Zonation"
+    ) +
+    ggplot2::coord_fixed(expand = FALSE) +
+    ggplot2::theme_void() +
+    ggplot2::theme(
+      legend.position  = if (show_legend) "right" else "none",
+      plot.background  = ggplot2::element_rect(fill = "transparent", colour = NA),
+      panel.background = ggplot2::element_rect(fill = "transparent", colour = NA)
+    )
+}
+
+#' Density plot of inferred zonation across one or more samples
+#'
+#' Overlays the distributions of \code{getZonationGradient()} values for one
+#' or more samples as outlined density curves on a shared baseline.
+#'
+#' @param zone_objs A single Zonation Object, or a (preferably named) list of
+#'   them. List names are used as legend labels.
+#' @param palette Character; a paletteer palette name for outline colors
+#'   (default \code{"viridis::viridis"}).
+#' @param line_width Numeric line width for density outlines (default 1).
+#' @return A ggplot object.
+#' @export
+plotZonationRidge <- function(zone_objs, palette = 'grDevices::rainbow', line_width = 1, adjust = 3) {
+  if (is.list(zone_objs) && !is.null(zone_objs$mtx)) {
+    zone_objs <- list(zone_objs)
+  }
+  if (is.null(names(zone_objs))) {
+    names(zone_objs) <- paste0("Sample_", seq_along(zone_objs))
+  } else {
+    blank <- !nzchar(names(zone_objs))
+    names(zone_objs)[blank] <- paste0("Sample_", which(blank))
+  }
+  df <- do.call(rbind, lapply(seq_along(zone_objs), function(i) {
+    z <- as.numeric(getZonationGradient(zone_objs[[i]]))
+    z <- z[is.finite(z)]
+    if (length(z) == 0) {
+      stop(sprintf("No finite zonation values for sample '%s'.",
+                   names(zone_objs)[i]))
+    }
+    data.frame(Sample = names(zone_objs)[i], Zonation = z)
+  }))
+  df$Sample <- factor(df$Sample, levels = names(zone_objs))
+  n <- length(zone_objs)
+  pal_colors <- tryCatch({
+    cols <- as.character(paletteer::paletteer_d(palette))
+    rep_len(cols, n)
+  }, error = function(e) {
+    as.character(paletteer::paletteer_c(palette, n = n))
+  })
+  ggplot2::ggplot(df, ggplot2::aes(x = Zonation, color = Sample)) +
+    ggplot2::geom_density(fill = NA, linewidth = line_width, bounds = c(1, 3), adjust = adjust) +
+    ggplot2::scale_color_manual(values = pal_colors) +
+    ggplot2::scale_x_continuous(expand = c(0, 0)) +
+    ggplot2::coord_cartesian(xlim = c(1, 3)) +
+    ggplot2::labs(x = "Zonation", y = "Proportion") +
+    ggplot2::theme_gray()
 }
