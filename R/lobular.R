@@ -219,7 +219,7 @@ apply_interpolation = function(mtx, coords, zone_obj, resolution = 1) {
 #' @param factor_threshold (Optional) Minimum value for zonation factors to be included in calculation (removes noise).
 #' @return A \code{ZonationObject} with calibrated baseline zonation
 #' @export
-trainModel = function(mtx, coords = NULL, species = 'human', regularization = 1, filter = 0, verbose = FALSE) {
+trainModel = function(mtx, coords = NULL, species = 'human', regularization = 0.8, filter = 0, verbose = FALSE) {
   if (species == 'human') {
     initial_weights = readRDS(system.file('extdata', 'initial_weights_human.RDS', package = 'lobular'))
   } else if (species == 'mouse') {
