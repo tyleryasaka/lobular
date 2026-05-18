@@ -47,7 +47,7 @@ Train the model on a baseline liver sample.
 
 **Usage:**
 ```r
-trainModel(mtx, coords = NULL, species = 'human', regularization = 1, filter = 0, verbose = FALSE)
+trainModel(mtx, coords = NULL, species = 'human', regularization = 0.8, filter = 0, verbose = FALSE)
 ```
 
 **Arguments:**
