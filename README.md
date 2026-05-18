@@ -5,6 +5,8 @@ The hepatic lobule demonstrates a gradient from the portal triad to the central 
 
 The `lobular` R package evenly divides cells in a baseline sample into zones 1, 2, and 3 based on their expression of zonated genes. This is based on the spatial arrangement of genes along an annotated porto-central axis. This uses my own annotations which I performed on public data from the [Liver Cell Atlas](https://www.livercellatlas.org/). The majority of zonation captured is presumed to be hepatocyte derived, but this data is not hepatocyte-specific. There are numerous studies demonstrating that other cell types are zonated as well (e.g. endothelial cells, hepatic stellate cells, and macrophages; more detail on this in my review).
 
+If you have any questions or comments, or any issues using the package, please feel free to reach out: `typublic@pm.me`
+
 ## Installation
 
 ```r
